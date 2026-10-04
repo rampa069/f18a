@@ -94,6 +94,7 @@ entity f18a_core is
       csync_n_o            : out std_logic;  -- composite sync for RGB / SCART
       blank_o              : out std_logic;  -- '1' outside the picture (not display enable)
       r9_pal_o             : out std_logic;  -- V9938 mode: R#9 NT ('1' = PAL), to drive pal_i
+      cmd_fast_i           : in  std_logic := '1';  -- V9938 command engine: '1' fast, '0' V9938 timing
       interlace_o          : out std_logic;  -- V9938 mode: R#9 IL (interlaced output)
 
       -- Feature Selection
@@ -133,6 +134,12 @@ architecture rtl of f18a_core is
    signal v38_lines212_s   : std_logic;                  -- V9938 display controls
    signal v38_r9_s         : std_logic_vector(0 to 7);
    signal field_s          : std_logic;                  -- S#2 EO
+   -- V9938 cycle (21.477 MHz, 4 core clocks) in the line, for the command
+   -- engine timing: two per raster pixel.
+   signal rx_core_r        : unsigned(0 to 9) := (others => '0');
+   signal cyc_phase_r      : unsigned(0 to 2) := (others => '0');
+   signal cyc_r            : unsigned(10 downto 0) := (others => '0');
+   signal cyc_tick_r       : std_logic := '0';
    signal v38_blink_raw_s  : std_logic;                  -- R#13 blink state
    signal page_odd_s       : std_logic;                  -- '0': show the even bitmap page
    signal bmp_r2_s         : std_logic_vector(0 to 7);
@@ -357,6 +364,9 @@ begin
       v38_blink_raw  => v38_blink_raw_s,
       v38_r12        => v38_r12_s,
       eo             => field_s,
+      cmd_fast       => cmd_fast_i,
+      cyc            => cyc_r,
+      cyc_tick       => cyc_tick_r,
    -- VRAM Interface
       vdin           => cpu_dout_s,       -- In to CPU from *out* of VRAM
       vwe            => cpu_we_s,
@@ -649,6 +659,21 @@ begin
       half_r <= raster_x_s(9);
    end if; end process;
    r9_pal_o <= v38_r9_s(6);
+
+   process (clk_core_i) begin if rising_edge(clk_core_i) then
+      rx_core_r <= raster_x_s;
+      if rx_core_r /= raster_x_s then
+         cyc_phase_r <= (others => '0');
+      else
+         cyc_phase_r <= cyc_phase_r + 1;
+      end if;
+      cyc_r <= resize(raster_x_s, 10) & cyc_phase_r(0);
+      if cyc_phase_r = 0 or cyc_phase_r = 4 then
+         cyc_tick_r <= '1';
+      else
+         cyc_tick_r <= '0';
+      end if;
+   end if; end process;
    interlace_o <= v38_r9_s(4);
 
    -- Bitmap even / odd page (openMSX VDP::getEvenOddMask): the odd page bit

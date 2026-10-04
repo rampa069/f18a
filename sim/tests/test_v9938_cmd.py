@@ -43,9 +43,10 @@ def vram_snapshot(ram):
     return [int(v) for v in ram.value]
 
 
-async def run(dut, seq):
+async def run(dut, seq, fast=True):
     f = F18A(dut)
     await f.reset(v9938=True)
+    dut.cmd_fast_i.value = 1 if fast else 0
     for r, v in enumerate(REGS):
         await f.set_reg(r, v)
     await f.read_status()
@@ -73,7 +74,7 @@ async def run(dut, seq):
         for _ in range(POLL_LIMIT):
             if (await f.read_port(1)) & bit == value:
                 break
-            await Timer(1, "us")
+            await Timer(1 if fast else 20, "us")
         else:
             raise AssertionError(f"{seq}: S#2 bit {bit:02x} never became {value:02x}")
         model.read_status()
@@ -152,6 +153,83 @@ def _make(seq):
     return cocotb.test()(t)
 
 
+@cocotb.test()
+async def cmd_G4_move_timed(dut):
+    """The G4_move sequence with the V9938 command timing."""
+    await run(dut, "G4_move", fast=False)
+
+
 for _seq in io_sequences.SEQUENCES_CMD:
     if _seq not in io_sequences.V9958_SEQUENCES:
         globals()[f"cmd_{_seq}"] = _make(_seq)
+
+
+# -- V9938 command timing (cmd_fast_i = 0) ------------------------------------
+
+VAS_URL = "openMSX src/video/VDPAccessSlots.cc"
+CYCLE_NS = 4 * 11.640          # 21.477 MHz, 4 core clocks
+
+
+def slot_table(engine, name):
+    v = int(getattr(engine, name).value)          # 1368 bits, bit 0 = MSB
+    return [(v >> (1367 - i)) & 1 for i in range(1368)]
+
+
+async def grants(dut, engine, n_max, timeout_us):
+    """(time in ns, line cycle, need) of each access of the engine, taken
+    when it is granted a slot."""
+    from cocotb.triggers import RisingEdge, with_timeout
+    from cocotb.utils import get_sim_time
+    out = []
+
+    async def watch():
+        while len(out) < n_max:
+            await RisingEdge(engine.go_r)
+            out.append((get_sim_time("ns"), int(dut.inst_core.cyc_r.value), int(engine.need_r.value)))
+    try:
+        await with_timeout(watch(), timeout_us, "us")
+    except Exception:
+        pass
+    return out
+
+
+@cocotb.test()
+async def cmd_timing(dut):
+    """With the V9938 timing every access goes to the first command slot (of
+    the display off table here, BL = 0) at least 'need' cycles after the
+    previous one, and the deltas are those of openMSX: HMMV starts after
+    112 cycles, then 46 per byte and 46 + 58 after the last of a line."""
+    import cocotb as _c
+    f = F18A(dut)
+    await f.reset(v9938=True)
+    dut.cmd_fast_i.value = 0
+    for r, v in enumerate([0x06, 0x00, 0x1F, 0, 0, 0, 0, 0, 0x08]):  # G4, BL = 0
+        await f.set_reg(r, v)
+    engine = dut.inst_core.inst_cpu.inst_cmd
+    table = slot_table(engine, "SLOTS_SCREEN_OFF")
+
+    # HMMV 8 x 3 bytes (16 pixels in G4).
+    task = _c.start_soon(grants(dut, engine, 24, 2000))
+    await f.set_reg(17, 36)
+    for v in [10, 0, 20, 0, 16, 0, 3, 0, 0x5A, 0x00, 0xC0]:
+        await f.write_port(3, v)
+    t_r46 = _c.utils.get_sim_time("ns")
+    got = await task
+    assert len(got) == 24, f"HMMV: {len(got)} accesses"
+
+    needs = [g[2] for g in got]
+    exp = [112] + ([46] * 7 + [104]) * 2 + [46] * 7
+    assert needs == exp, f"deltas {needs}"
+
+    prev = None
+    for k, (t, cyc, need) in enumerate(got):
+        assert table[cyc], f"access {k} at cycle {cyc}: not a command slot"
+        if prev is not None:
+            gap = round((t - prev[0]) / CYCLE_NS)
+            assert gap >= need, f"access {k}: {gap} cycles after the previous one, need {need}"
+            # It is the first slot that satisfies 'need'.
+            for d in range(need, gap):
+                assert not table[(prev[1] + d) % 1368], \
+                    f"access {k}: slot at +{d} skipped (need {need}, took {gap})"
+        prev = (t, cyc)
+    dut._log.info("HMMV: %d accesses in %.1f us", len(got), (got[-1][0] - t_r46) / 1000)

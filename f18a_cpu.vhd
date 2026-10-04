@@ -93,6 +93,9 @@ entity f18a_cpu is
       v38_blink   : out std_logic;                    -- V9938 T2: blink state on (R#12 colors)
       v38_blink_raw : out std_logic;                  -- V9938 R#13 blink state (bitmap page flip)
       eo          : in  std_logic := '0';             -- V9938 S#2 EO (field)
+      cmd_fast    : in  std_logic := '1';             -- V9938 command engine: '1' fast, '0' V9938 timing
+      cyc         : in  unsigned(10 downto 0) := (others => '0');  -- V9938 cycle in the line
+      cyc_tick    : in  std_logic := '0';             -- start of each V9938 cycle
       v38_r12     : out std_logic_vector(0 to 7);
    -- VRAM Interface
       vdin        : in  std_logic_vector(0 to 7);
@@ -1492,6 +1495,11 @@ begin
       rst_n       => rst_n,
       mode_ok     => v38_bmp_s,
       bmode       => v38_bmode_s,
+      fast        => cmd_fast,
+      cyc         => cyc,
+      cyc_tick    => cyc_tick,
+      scr_on      => v38_reg(1)(1) and not vr,       -- BL, active lines
+      spr_on      => not v38_reg(8)(6),              -- not SPD
       reg_we      => cmd_reg_we,
       reg_idx     => cmd_reg_idx,
       reg_din     => cmd_reg_din,

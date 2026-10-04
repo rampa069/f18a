@@ -57,6 +57,7 @@ class F18A:
         dut.mode_i.value = 0
         dut.mode1_i.value = 0
         dut.v9938_i.value = 1 if v9938 else 0
+        dut.cmd_fast_i.value = 1                    # command engine without V9938 timing
         dut.csw_n_i.value = 1
         dut.csr_n_i.value = 1
         dut.cd_i.value = 0

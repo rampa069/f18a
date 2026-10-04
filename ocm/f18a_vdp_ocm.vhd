@@ -273,6 +273,7 @@ begin
       csync_n_o      => cs15_n_s,
       blank_o        => blank15_s,
       r9_pal_o       => r9_pal_core_s,
+      cmd_fast_i     => vdpspeedmode,   -- '0': V9938 command timing, '1': fast
       interlace_o    => interlace_s,
       sprite_max_i   => '0',            -- 32 sprites per line, F18A default
       spi_clk_o      => open,

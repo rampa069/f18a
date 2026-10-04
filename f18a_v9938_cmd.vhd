@@ -46,6 +46,14 @@
 -- mem_ack (one clock); read data comes on mem_din the clock after, with
 -- mem_rvalid.  Addresses are physical (G6 / G7 already planar).
 --
+-- Speed: with fast = '1' the engine runs as fast as the VRAM port allows.
+-- With fast = '0' it follows the V9938 timing of openMSX (VDPAccessSlots,
+-- VDPCmdEngine): every access waits for the first command slot of the line
+-- that is at least 'delta' cycles (21.477 MHz) after the previous access,
+-- with the slot tables (display off / sprites off / sprites on) and the
+-- deltas of each command step.  The small corrections of openMSX (padded
+-- memory cycles, +1 with sprites) are left out.
+--
 -- The counters SY, DY, NY, ASX, ADX and ANX are 16 bits: openMSX steps
 -- them without masking, so after a command DY can be above 1023 or
 -- negative, and the registers read back (debugger) the high byte of that.
@@ -60,6 +68,12 @@ entity f18a_v9938_cmd is
       rst_n       : in  std_logic;
       mode_ok     : in  std_logic;                    -- '1' in G4-G7 (commands possible)
       bmode       : in  std_logic_vector(0 to 1);     -- "00" G4, "01" G5, "10" G6, "11" G7
+   -- Timing
+      fast        : in  std_logic := '1';             -- '1': no V9938 timing
+      cyc         : in  unsigned(10 downto 0) := (others => '0');  -- V9938 cycle in the line, 0-1367
+      cyc_tick    : in  std_logic := '0';             -- one clock at the start of each cycle
+      scr_on      : in  std_logic := '0';             -- display enabled and in the active lines
+      spr_on      : in  std_logic := '0';             -- sprites enabled (R#8 SPD = 0)
    -- CPU
       reg_we      : in  std_logic;                    -- one clock: write R#32 + reg_idx
       reg_idx     : in  unsigned(0 to 3);
@@ -88,6 +102,39 @@ architecture rtl of f18a_v9938_cmd is
 
    subtype u16 is unsigned(15 downto 0);
    subtype u8  is unsigned(7 downto 0);
+
+   -- openMSX VDPAccessSlots slotsScreenOff: 154 slots per line.
+   constant SLOTS_SCREEN_OFF : std_logic_vector(0 to 1367) :=
+      x"8080808080808080808080808080808000000000080808080808080808080808" &
+      x"0808080008080808080808080808080808080800080808080808080808080808" &
+      x"0808080008080808080808080808080808080800080808080808080808080808" &
+      x"0808080008080808080808080808080808080800080808080808080808080808" &
+      x"0808080008080808080808080808080808080800080808080808000000000808" &
+      x"0808080808080200808080";
+
+   -- openMSX VDPAccessSlots slotsSpritesOff: 88 slots per line.
+   constant SLOTS_SPRITES_OFF : std_logic_vector(0 to 1367) :=
+      x"0202020202020202020202020202020000000000202002080000020800000208" &
+      x"0000020000000208000002080000020800000200000002080000020800000208" &
+      x"0000020000000208000002080000020800000200000002080000020800000208" &
+      x"0000020000000208000002080000020800000200000002080000020800000208" &
+      x"0000020000000208000002080000020800000200000002080000000000002020" &
+      x"2020202020200802020202";
+
+   -- openMSX VDPAccessSlots slotsSpritesOn: 31 slots per line.
+   constant SLOTS_SPRITES_ON : std_logic_vector(0 to 1367) :=
+      x"0000000800000000000000080000000000000000202000080000000800000008" &
+      x"0000000000000008000000080000000800000000000000080000000800000008" &
+      x"0000000000000008000000080000000800000000000000080000000800000008" &
+      x"0000000000000008000000080000000800000000000000080000000800000008" &
+      x"0000000000000008000000080000000800000000000000080000000000008000" &
+      x"0000000000002000000000";
+
+   -- Delay from the R#46 write to the first access (openMSX CMD_START_*),
+   -- per command (R#46 bits 7-4).
+   type start_t is array (0 to 15) of natural range 0 to 255;
+   constant START_DELTA : start_t := (
+      0, 0, 0, 0, 63, 88, 88, 112, 88, 64, 76, 88, 112, 100, 100, 112);
 
    -- Commands, R#46 bits 7-4.
    constant C_POINT : unsigned(3 downto 0) := x"4";
@@ -253,6 +300,13 @@ architecture rtl of f18a_v9938_cmd is
    signal wbyte         : u8 := (others => '0');       -- byte for the H commands
    signal pcolor        : u8 := (others => '0');       -- color for the L commands
 
+   -- Timing.
+   signal since_r       : u8 := (others => '1');       -- cycles since the last access
+   signal need_r        : u8 := (others => '0');       -- minimum for the pending access
+   signal unit_delta_r  : u8 := (others => '0');       -- before the first access of a pixel / byte
+   signal go_r          : std_logic := '0';
+   signal slot_s        : std_logic;
+
    -- Decoded.
    signal cmd_s         : unsigned(3 downto 0);
    signal op_s          : unsigned(3 downto 0);
@@ -300,6 +354,7 @@ begin
       variable c_nx    : unsigned(9 downto 0);
       variable c_y     : u16;
       variable c_two   : boolean;
+      variable dl_main, dl_eol : natural range 0 to 255;
 
       procedure finish is
       begin
@@ -308,19 +363,21 @@ begin
          state <= S_IDLE;
       end procedure;
 
-      procedure read_at(x, y : u16; ret : state_t) is
+      procedure read_at(x, y : u16; ret : state_t; dl : u8) is
       begin
          req_r  <= '1';
          we_r   <= '0';
+         need_r <= dl;
          addr_r <= addr_of(bmode, x, y);
          ret_st <= ret;
          state  <= S_RD;
       end procedure;
 
-      procedure write_at(ad : unsigned(16 downto 0); d : u8; ret : state_t) is
+      procedure write_at(ad : unsigned(16 downto 0); d : u8; ret : state_t; dl : u8) is
       begin
          req_r  <= '1';
          we_r   <= '1';
+         need_r <= dl;
          addr_r <= ad;
          dout_r <= d;
          ret_st <= ret;
@@ -350,6 +407,22 @@ begin
          adx_r  <= (others => '0');
          anx_r  <= (others => '0');
       else
+
+         -- The pending access may go at a command slot 'need' cycles after
+         -- the slot of the previous one.  since_r counts the cycles from
+         -- that slot; at a cycle start it still holds the count of the
+         -- cycle before, hence the + 1.
+         if cyc_tick = '1' and since_r /= x"FF" then
+            since_r <= since_r + 1;
+         end if;
+         if req_r = '0' or mem_ack = '1' then
+            go_r <= '0';
+         elsif fast = '1' then
+            go_r <= '1';
+         elsif go_r = '0' and cyc_tick = '1' and slot_s = '1' and resize(since_r, 9) + 1 >= need_r then
+            go_r <= '1';
+            since_r <= (others => '0');
+         end if;
 
          case state is
 
@@ -413,13 +486,13 @@ begin
             case cmd_s is
             when C_POINT =>
                src_x <= resize(sx_r, 16);
-               if mxs_s = '1' then state <= S_SRC; else read_at(resize(sx_r, 16), sy_r, S_SRC); end if;
+               if mxs_s = '1' then state <= S_SRC; else read_at(resize(sx_r, 16), sy_r, S_SRC, unit_delta_r); end if;
             when C_SRCH | C_LMMM | C_LMCM | C_HMMM =>
                src_x <= asx_r;
-               if mxs_s = '1' then state <= S_SRC; else read_at(asx_r, sy_r, S_SRC); end if;
+               if mxs_s = '1' then state <= S_SRC; else read_at(asx_r, sy_r, S_SRC, unit_delta_r); end if;
             when C_YMMM =>
                src_x <= adx_r;
-               if mxd_s = '1' then state <= S_STEP; else read_at(adx_r, sy_r, S_SRC); end if;
+               if mxd_s = '1' then state <= S_STEP; else read_at(adx_r, sy_r, S_SRC, unit_delta_r); end if;
             when others =>
                wbyte <= col_r;
                state <= S_DST;
@@ -449,6 +522,7 @@ begin
                else
                   a := asx_r + tx_s;
                   asx_r <= a;
+                  unit_delta_r <= to_unsigned(88, 8);
                   if a(ppl_bit_s) = '1' then
                      finish;           -- not found (BD is left as it is)
                   else
@@ -470,15 +544,25 @@ begin
             if mxd_s = '1' then
                state <= S_STEP;
             elsif byte_cmd_s then
-               write_at(addr_of(bmode, a, dy_r), wbyte, S_STEP);
+               -- HMMM / YMMM: 24 cycles after the source read.
+               if cmd_s = C_HMMM or cmd_s = C_YMMM then
+                  write_at(addr_of(bmode, a, dy_r), wbyte, S_STEP, to_unsigned(24, 8));
+               else
+                  write_at(addr_of(bmode, a, dy_r), wbyte, S_STEP, unit_delta_r);
+               end if;
             else
-               read_at(a, dy_r, S_DST_RMW);
+               -- LMMM: 32 cycles after the source read.
+               if cmd_s = C_LMMM then
+                  read_at(a, dy_r, S_DST_RMW, to_unsigned(32, 8));
+               else
+                  read_at(a, dy_r, S_DST_RMW, unit_delta_r);
+               end if;
             end if;
 
          when S_DST_RMW =>
             v9 := logop(op_s, rdata, shift_col(bmode, pcolor, src_x), pix_mask(bmode, src_x));
             if v9(8) = '1' then
-               write_at(addr_r, v9(7 downto 0), S_STEP);
+               write_at(addr_r, v9(7 downto 0), S_STEP, to_unsigned(24, 8));
             else
                state <= S_STEP;
             end if;
@@ -491,6 +575,7 @@ begin
                done := true;
 
             when C_LINE =>
+               unit_delta_r <= to_unsigned(84, 8);
                if arg_r(0) = '0' then
                   -- X major.
                   a := adx_r + tx_s;
@@ -499,6 +584,7 @@ begin
                   if anx_r = resize(nx_r, 16) or a(ppl_bit_s) = '1' then
                      done := true;
                   elsif asx_r < ny_r then
+                     unit_delta_r <= to_unsigned(84 + 36, 8);
                      dyn := dy_r + ty_s;
                      dy_r <= dyn;
                      if diy_s and dyn(15) = '1' then
@@ -519,6 +605,7 @@ begin
                   else
                      a := adx_r;
                      if asx_r < ny_r then
+                        unit_delta_r <= to_unsigned(84 + 36, 8);
                         a := adx_r + tx_s;
                         asx_r <= (asx_r + resize(nx_r, 16) - ny_r) and to_unsigned(1023, 16);
                      else
@@ -534,12 +621,23 @@ begin
 
             when C_LMMV | C_LMMM | C_LMCM | C_LMMC | C_HMMV | C_HMMM | C_YMMM | C_HMMC =>
                two := cmd_s = C_LMMM or cmd_s = C_HMMM or cmd_s = C_YMMM;
+               -- Delay to the next pixel / byte, longer after the last of a line.
+               case cmd_s is
+               when C_LMMV => dl_main := 72; dl_eol := 72 + 58;
+               when C_LMMM => dl_main := 60; dl_eol := 60 + 68;
+               when C_HMMV => dl_main := 46; dl_eol := 46 + 58;
+               when C_HMMM => dl_main := 60; dl_eol := 60 + 68;
+               when C_YMMM => dl_main := 36; dl_eol := 36 + 68;
+               when others => dl_main := 1;  dl_eol := 1;      -- transfers: the CPU paces them
+               end case;
+               unit_delta_r <= to_unsigned(dl_main, 8);
                if cmd_s /= C_LMCM then adx_r <= adx_r + tx_s; end if;
                if cmd_s = C_LMMM or cmd_s = C_HMMM or cmd_s = C_LMCM then
                   asx_r <= asx_r + tx_s;
                end if;
                if anx_r = 1 then
                   -- End of the line.
+                  unit_delta_r <= to_unsigned(dl_eol, 8);
                   if two or cmd_s = C_LMCM then sy_r <= sy_r + ty_s; end if;
                   if cmd_s /= C_LMCM then dy_r <= dy_r + ty_s; end if;
                   ny_dec := ny_r - 1;
@@ -647,6 +745,8 @@ begin
                else
                   ce_r  <= '1';
                   state <= S_SETUP;
+                  since_r <= (others => '0');
+                  unit_delta_r <= to_unsigned(START_DELTA(to_integer(unsigned(reg_din(0 to 3)))), 8);
                end if;
             when others =>
                null;
@@ -663,7 +763,12 @@ begin
    busy     <= '0' when state = S_IDLE or state = S_XWAIT else '1';
    col      <= std_logic_vector(col_r);
    asx      <= std_logic_vector(asx_r(8 downto 0));
-   mem_req  <= req_r;
+   mem_req  <= req_r and go_r;
+
+   -- Command slot at this cycle.
+   slot_s <= SLOTS_SCREEN_OFF(to_integer(cyc)) when scr_on = '0' else
+             SLOTS_SPRITES_ON(to_integer(cyc)) when spr_on = '1' else
+             SLOTS_SPRITES_OFF(to_integer(cyc));
    mem_we   <= we_r;
    mem_addr <= std_logic_vector(addr_r);
    mem_dout <= std_logic_vector(dout_r);

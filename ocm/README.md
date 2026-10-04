@@ -40,13 +40,14 @@ virtual pins).
 | `NTSC_PAL_TYPE`, `FORCED_V_MODE` | PAL / NTSC: R#9 bit 1 (NT) when `NTSC_PAL_TYPE` = '1' (in V9938 mode read from the core, so 9Bh writes count too), otherwise `FORCED_V_MODE`, like the original. NTSC 262 lines 59.9 Hz, PAL 313 lines 50.1 Hz |
 | `INTERLACEMODE` | R#9 IL (V9938 mode); the odd fields are half a line lower |
 | `VGA_INT_FIELD`, `SPMAXSPR` | Default '0', so the wrapper also binds to the older `vdp` component without them (e.g. the [ZEMMIX](https://github.com/BigMist/ZEMMIX) `emsx_top`) |
-| `VDPSPEEDMODE`, `RATIOMODE`, `CENTERYJK_R25_N`, `LEGACY_VGA`, `VGA_INT_FIELD`, `SPMAXSPR`, `VDP_ID`, `OFFSET_Y` | Ignored |
+| `VDPSPEEDMODE` | V9938 command engine speed: '0' = V9938 timing (openMSX access slots), '1' = as fast as the internal VRAM allows |
+| `RATIOMODE`, `CENTERYJK_R25_N`, `LEGACY_VGA`, `VGA_INT_FIELD`, `SPMAXSPR`, `VDP_ID`, `OFFSET_Y` | Ignored |
 
 ## MSX2 compatibility
 
 With `V9938` = '1' the F18A behaves as a V9938 (beads f18a-5pv.1): all
 screen modes, sprite mode 2, the
-command engine, the 512 color palette, R#18, R#23, line interrupts,
+command engine (V9938 speed, or fast with `VDPSPEEDMODE`), the 512 color palette, R#18, R#23, line interrupts,
 interlace and even / odd pages, T2 with blink and the status registers.
 Not yet: VR = 0 (16 KB chips) addressing, collision coordinates.
 
