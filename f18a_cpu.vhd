@@ -273,6 +273,13 @@ architecture rtl of f18a_cpu is
    signal v38_paddr     : std_logic_vector(0 to 5);
    signal v38_pdata     : std_logic_vector(0 to 11);
    signal vaddr_log     : std_logic_vector(0 to 16);  -- logical VRAM address
+   -- V9938 power-on palette (openMSX / MSX2 BIOS), loaded into F18A palette
+   -- 0 after a reset in V9938 mode.  RGB 3 bits each, as 4 bits (x << 1 | x >> 2).
+   type v38_pal_t is array (0 to 15) of std_logic_vector(0 to 11);
+   constant V38_PALETTE : v38_pal_t := (
+      x"000", x"000", x"2D2", x"6F6", x"22F", x"46F", x"B22", x"4DF",
+      x"F22", x"F66", x"DD2", x"DD9", x"292", x"D4B", x"BBB", x"FFF");
+   signal v38_pinit     : unsigned(0 to 4) := "10000";  -- entry being loaded, bit 0 = done
 
    -- V9938 command engine.
    signal cmd_reg_we    : std_logic := '0';           -- R#32-R#46 written
@@ -693,6 +700,7 @@ begin
          intr_n_reg     <= '1';
          intr_ff        <= '0';
          horz_ff        <= '0';
+         v38_pinit      <= (others => '0');
 
       else
 
@@ -708,6 +716,16 @@ begin
 
          -- Always ask the GPU to pause unless idle or waiting for the EOC.
          gpu_pause_req <= '1';
+
+         -- After a reset in V9938 mode, load the V9938 palette.
+         if v38_pinit(0) = '0' then
+            v38_pinit <= v38_pinit + 1;
+            if v9938 = '1' then
+               v38_pwe <= '1';
+               v38_paddr <= "00" & std_logic_vector(v38_pinit(1 to 4));
+               v38_pdata <= V38_PALETTE(to_integer(v38_pinit(1 to 4)));
+            end if;
+         end if;
 
          -- See if the data port mode was updated.
          if pram_load = '1' then data_port_mode <= reg47dpm; end if;
@@ -1349,7 +1367,7 @@ begin
    vdout <= cmd_dout when io_state = st_cmd_acc else cd_in when gpu_pause = '1' else gpu_dout;
 
    -- PRAM interface.
-   pwe <= (pram_we or v38_pwe) when gpu_pause = '1' else gpu_pwe;
+   pwe <= '1' when v38_pwe = '1' else pram_we when gpu_pause = '1' else gpu_pwe;
    paddr <= v38_paddr when v38_pwe = '1' else pram_addr when gpu_pause = '1' else gpu_paddr;
    pdout <= v38_pdata when v38_pwe = '1' else pram_data when gpu_pause = '1' else gpu_pdout;
 

@@ -51,7 +51,7 @@ async def load(f, vram, regs, pal, vram_size=0x10000):
     await f.reset(v9938=True)
     await f.set_reg(1, 0x00)                   # blank while loading
     await f.set_reg(16, 0)
-    for r, g, b in pal:
+    for r, g, b in pal or []:
         await f.write_port(2, (r << 4) | b)
         await f.write_port(2, g)
     # 16 KB blocks: the address only carries into R14 in the V9938 modes.

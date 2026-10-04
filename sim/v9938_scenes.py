@@ -89,6 +89,12 @@ def page1(sc):
     return vram, regs, pal
 
 
+def default_palette(sc):
+    """Leave the palette as it is after a reset (the V9938 one)."""
+    vram, regs, _ = sc
+    return vram, regs, None
+
+
 # Scenes the core shows in V9938 mode (every mode but T2, f18a-5pv.1.6).
 DISPLAY_SCENES = {
     "g1": lambda: scene("G1", 1),
@@ -109,6 +115,8 @@ DISPLAY_SCENES = {
     "g6_scroll": lambda: scene("G6", 28, scroll=150),
     "g7_212": lambda: scene("G7", 12, lines212=True),
     "g7_scroll": lambda: scene("G7", 13, scroll=100),
+    "g1_default_pal": lambda: default_palette(scene("G1", 29)),
+    "g4_default_pal": lambda: default_palette(scene("G4", 30, tp=True)),
 }
 
 SCENES = {
