@@ -147,6 +147,7 @@ architecture rtl of f18a_sprites is
    signal y_next        : unsigned(0 to 8);           -- register y_next_in
 
    signal sp_x_valid    : std_logic;
+   signal sp_x_valid_next : std_logic;
 
    signal report5th_r, report5th_s : std_logic;
    signal in_range      : std_logic;                  -- the sprite is part of the current scan line
@@ -266,6 +267,13 @@ begin
 
    -- Valid pixel range in the buffer is 32..287 (255 pixels)
    sp_x_valid <= '1' when sp_x > 31 and sp_x < 288 else '0';
+
+   -- Validity of the next x location.  In the expand state the write enable
+   -- is registered together with the sp_x increment, so it must be for the
+   -- location written in the next clock, sp_x + 1.  Using sp_x_valid there
+   -- lagged by one pixel and dropped column 0 (buffer location 32) of early
+   -- clock sprites that start left of the screen.
+   sp_x_valid_next <= '1' when sp_x >= 31 and sp_x < 287 else '0';
 
    -- In range comparator, allow two clocks before using in
    -- read sprite x state
@@ -671,7 +679,7 @@ begin
             x_read_addr <= x_read_addr + 1;
 
             -- Write a pixel only when visible.
-            we <= sp_x_valid;
+            we <= sp_x_valid_next;
 
             -- Delay the pattern shift based on the magnification bit.
             if mag_reg = '1' then shift_en <= not shift_en; end if;

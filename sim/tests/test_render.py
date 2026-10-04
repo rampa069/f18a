@@ -67,11 +67,6 @@ async def run_scene(dut, name):
 # expected to fail until the bug is fixed; cocotb then reports them as failing
 # ("unexpectedly passed") so the entry can be removed.
 KNOWN_BUGS = {
-    "graphics2_mag": "f18a-v0x",        # early clock sprites miss column 0
-    "sprite_edges": "f18a-v0x",
-    "sprite_edges_mag": "f18a-v0x",
-    "sprite_edges_16": "f18a-v0x",
-    "sprite_edges_16_mag": "f18a-v0x",
     "blanked": "f18a-y7g",              # sprite flags set while blanked
 }
 
