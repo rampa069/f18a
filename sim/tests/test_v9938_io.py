@@ -30,6 +30,8 @@ async def run(dut, seq):
     await f.read_status()
 
     model = vm.V9938(regs=regs + [0] * (47 - len(regs)))
+    # Start from the RTL VRAM (the F18A boot screen in the first 16 KB).
+    model.vram[:] = bytes(int(v) for v in dut.inst_core.inst_vram.inst_ram.ram.value)
     model.read_status()
 
     ops = io_sequences.SEQUENCES[seq]()
@@ -50,7 +52,17 @@ async def run(dut, seq):
 
 @cocotb.test()
 async def io_basic(dut):
-    model = await run(dut, "basic")
+    await check(dut, "basic")
+
+
+@cocotb.test()
+async def io_vr0(dut):
+    """R#8 VR = 0 (16K chips address mapping)."""
+    await check(dut, "vr0")
+
+
+async def check(dut, seq):
+    model = await run(dut, seq)
     core = dut.inst_core
 
     # V9938 registers.

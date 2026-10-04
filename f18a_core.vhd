@@ -110,6 +110,14 @@ end f18a_core;
 
 architecture rtl of f18a_core is
 
+   function vr0_map(a : std_logic_vector(0 to 16); vr : std_logic) return std_logic_vector is
+   begin
+      if vr = '1' then
+         return a;
+      end if;
+      return a(2 to 10) & a(10 to 16) & '1';
+   end function;
+
    -- Output video registers.
    signal blank_r          : std_logic := '1';
    signal hsync_r          : std_logic := '1';
@@ -133,6 +141,8 @@ architecture rtl of f18a_core is
    signal frame_pal_s      : std_logic;
    signal v38_lines212_s   : std_logic;                  -- V9938 display controls
    signal v38_r9_s         : std_logic_vector(0 to 7);
+   signal v38_r8vr_s       : std_logic;                  -- R#8 VR
+   signal cpu_vaddr_m_s, tile_vaddr_m_s, sprt_vaddr_m_s : std_logic_vector(0 to 16);
    signal field_s          : std_logic;                  -- S#2 EO
    -- V9938 cycle (21.477 MHz, 4 core clocks) in the line, for the command
    -- engine timing: two per raster pixel.
@@ -311,15 +321,23 @@ begin
    -- CPU Interface
       cpu_din        => cpu_din_s,
       cpu_we         => cpu_we_s,
-      cpu_addr       => cpu_addr_s(17 - VRAM_ABITS to 16),
+      cpu_addr       => cpu_vaddr_m_s(17 - VRAM_ABITS to 16),
       cpu_dout       => cpu_dout_s,
    -- Tile Interface
       tile_active    => tile_active_s,
-      tile_addr      => tile_addr_s,
+      tile_addr      => tile_vaddr_m_s,
       tile_dout      => tile_dout_s,
    -- Sprite Interface
-      sprt_addr      => sprt_vaddr_s
+      sprt_addr      => sprt_vaddr_m_s
    );
+
+   -- V9938 R#8 VR = 0 (16K chips): only A14-A0 count, and the VDP reaches
+   -- the DRAM cells in another order.  The VRAM is kept in the VR = 1 order;
+   -- a VR = 0 address goes to the cell 1 | A6-A0 << 1 | A14-A6 << 2 like
+   -- openMSX VDPVRAM::swapAddr (A6 twice).
+   cpu_vaddr_m_s  <= vr0_map(cpu_addr_s, v38_r8vr_s);
+   tile_vaddr_m_s <= vr0_map(tile_addr_s, v38_r8vr_s);
+   sprt_vaddr_m_s <= vr0_map(sprt_vaddr_s, v38_r8vr_s);
 
 
    -- Host CPU interface
@@ -347,6 +365,7 @@ begin
       hr             => v38_hr_s,
       v38_lines212   => v38_lines212_s,
       v38_r9         => v38_r9_s,
+      v38_vr         => v38_r8vr_s,
       v38_vscroll    => v38_vscroll_s,
       v38_hadj       => v38_hadj_s,
       v38_vadj       => v38_vadj_s,

@@ -55,7 +55,37 @@ def seq_basic():
     return s
 
 
-SEQUENCES = {"basic": seq_basic}
+def seq_vr0():
+    """R#8 VR = 0 (16K chips): only A14-A0 count and they reach other cells
+    than with VR = 1 (openMSX VDPVRAM::swapAddr)."""
+    rng = random.Random(7)
+    sw = lambda a: 1 | ((a & 0x7F) << 1) | ((a & 0x7FC0) << 2)
+    addrs = [0x0000, 0x0041, 0x0080, 0x1234, 0x3FFF]
+    s = reg(8, 0x00)                                     # VR = 0
+    for a in addrs:
+        s += waddr(a) + [out(0x98, rng.getrandbits(8)) for _ in range(3)]
+    s += reg(14, 1) + waddr(0x0123) + [out(0x98, rng.getrandbits(8)) for _ in range(3)]
+    s += reg(14, 3) + raddr(0x0123) + [inp(0x98) for _ in range(3)]   # A15 ignored
+    s += reg(14, 0)
+    for a in addrs:
+        s += raddr(a) + [inp(0x98) for _ in range(3)]
+    s += reg(8, 0x08)                                    # VR = 1: where did they go?
+    for a in addrs + [0x4123]:
+        p = sw(a)
+        s += reg(14, p >> 14) + raddr(p & 0x3FFF) + [inp(0x98) for _ in range(2)]
+    s += reg(14, 0)
+    for a in addrs:
+        s += raddr(a) + [inp(0x98)]
+    # Written with VR = 1, read with VR = 0.
+    s += waddr(0x2345) + [out(0x98, rng.getrandbits(8)) for _ in range(4)]
+    s += reg(8, 0x00)
+    for a in (0x2345, 0x2346, 0x1000, 0x00A2):
+        s += raddr(a) + [inp(0x98)]
+    s += reg(8, 0x08)
+    return s
+
+
+SEQUENCES = {"basic": seq_basic, "vr0": seq_vr0}
 
 
 # -- Command engine -------------------------------------------------------

@@ -202,10 +202,10 @@ class CmdEngine:
     # -- VRAM ---------------------------------------------------------------
 
     def _rd(self, addr):
-        return self.vdp.vram[addr & 0x1FFFF]
+        return self.vdp.vram[self.vdp.phys(addr)]
 
     def _wr(self, addr, value):
-        self.vdp.vram[addr & 0x1FFFF] = value & 0xFF
+        self.vdp.vram[self.vdp.phys(addr)] = value & 0xFF
 
     def _point(self, m, x, y, ext):
         if ext and not self.has_ext_vram:

@@ -64,7 +64,7 @@ def run_model_io(ops, regs):
 TIMING_BITS = {0: 0xFF, 1: 0x01, 2: 0x60}
 
 
-@pytest.mark.parametrize("seq", ["basic"])
+@pytest.mark.parametrize("seq", ["basic", "vr0"])
 def test_io(seq):
     import io_sequences
     import openmsx_oracle as oracle

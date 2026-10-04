@@ -77,6 +77,7 @@ entity f18a_cpu is
       hr          : in  std_logic;                    -- '1' outside the active pixels (V9938 S#2 HR)
       v38_lines212: out std_logic;                    -- V9938 R9 LN
       v38_r9      : out std_logic_vector(0 to 7);     -- V9938 R9 (NT, IL, EO)
+      v38_vr      : out std_logic;                    -- V9938 R8 VR ('0' = 16K chips address mapping)
       v38_vscroll : out unsigned(0 to 7);             -- V9938 R23 vertical scroll
       v38_hadj    : out signed(0 to 3);               -- V9938 R18 set adjust, horizontal
       v38_vadj    : out signed(0 to 3);               --                       vertical
@@ -1399,6 +1400,7 @@ begin
    -- V9938 display controls.
    v38_lines212 <= v9938 and v38_reg(9)(0);
    v38_r9       <= v38_reg(9) when v9938 = '1' else (others => '0');
+   v38_vr       <= v38_reg(8)(4) or not v9938;
    v38_vscroll  <= unsigned(v38_reg(23)) when v9938 = '1' else (others => '0');
    v38_hadj     <= signed(v38_reg(18)(4 to 7)) when v9938 = '1' else (others => '0');
    v38_vadj     <= signed(v38_reg(18)(0 to 3)) when v9938 = '1' else (others => '0');

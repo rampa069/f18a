@@ -129,17 +129,27 @@ class V9938:
     def pattern_base(self):
         return ((self.regs[4] << 11) | 0x7FF) & 0x1FFFF
 
+    def phys(self, addr):
+        """VRAM cell of an address (already planar in G6 / G7).  self.vram
+        is kept in the R#8 VR = 1 order; with VR = 0 (16K chips) only A14-A0
+        count and they reach the cells like openMSX VDPVRAM::swapAddr."""
+        addr &= 0x1FFFF
+        if self.regs[8] & 0x08:
+            return addr
+        a = addr & 0x7FFF
+        return 1 | ((a & 0x7F) << 1) | ((a & 0x7FC0) << 2)
+
     def vram_read(self, addr):
         """Read a logical address as the display does in the current mode."""
         if self.mode in PLANAR_MODES:
             addr = planar(addr)
-        return self.vram[addr & 0x1FFFF]
+        return self.vram[self.phys(addr)]
 
     # -- CPU interface ------------------------------------------------------
 
     def _vram_addr(self):
         addr = ((self.regs[14] & 7) << 14) | self.addr
-        return planar(addr) if self.mode in PLANAR_MODES else addr
+        return self.phys(planar(addr) if self.mode in PLANAR_MODES else addr)
 
     def _increment(self):
         self.addr = (self.addr + 1) & 0x3FFF
@@ -362,10 +372,10 @@ class V9938:
         base = self.name_base() & (~(0x100 << 7) | (eo_mask << 7))
         if mode in PLANAR_MODES:
             vline = (base >> 7) & (0x100 | y)
-            data = [self.vram[planar(vline * 256 + i)] for i in range(256)]
+            data = [self.vram[self.phys(planar(vline * 256 + i))] for i in range(256)]
         else:
             vline = (base >> 7) & (0x300 | y)
-            data = [self.vram[(vline * 128 + i) & 0x1FFFF] for i in range(128)]
+            data = [self.vram[self.phys(vline * 128 + i)] for i in range(128)]
         if mode == G4:
             return np.array([v for b in data for v in (b >> 4, b & 15)], dtype=np.uint16)
         if mode == G5:
