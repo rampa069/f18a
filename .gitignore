@@ -16,3 +16,11 @@ results.xml
 
 # macOS
 .DS_Store
+
+# Quartus
+altera/db/
+altera/incremental_db/
+altera/output_files/
+altera/*.log
+altera/*.qws
+altera/crit.txt

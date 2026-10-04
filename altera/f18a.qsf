@@ -1,0 +1,42 @@
+# F18A stand-alone VDP, reference Quartus project for Cyclone IV E.
+# No pin assignments: this project checks synthesis, fit and timing on the
+# reference device.  Add a board specific .qsf section (or a new revision)
+# with the pin locations for real hardware.
+
+set_global_assignment -name FAMILY "Cyclone IV E"
+set_global_assignment -name DEVICE EP4CE22F17C8
+set_global_assignment -name TOP_LEVEL_ENTITY f18a_top_altera
+set_global_assignment -name PROJECT_OUTPUT_DIRECTORY output_files
+set_global_assignment -name VHDL_INPUT_VERSION VHDL_2008
+
+set_global_assignment -name VHDL_FILE ../f18a_version.vhd
+set_global_assignment -name VHDL_FILE ../f18a_color.vhd
+set_global_assignment -name VHDL_FILE ../f18a_counters.vhd
+set_global_assignment -name VHDL_FILE ../f18a_div32x16.vhd
+set_global_assignment -name VHDL_FILE ../f18a_single_port_ram.vhd
+set_global_assignment -name VHDL_FILE ../f18a_vram.vhd
+set_global_assignment -name VHDL_FILE ../f18a_vga_cont_640_60.vhd
+set_global_assignment -name VHDL_FILE ../f18a_gpu.vhd
+set_global_assignment -name VHDL_FILE ../f18a_cpu.vhd
+set_global_assignment -name VHDL_FILE ../f18a_tile_linebuf.vhd
+set_global_assignment -name VHDL_FILE ../f18a_tiles.vhd
+set_global_assignment -name VHDL_FILE ../f18a_sprites.vhd
+set_global_assignment -name VHDL_FILE ../f18a_core.vhd
+set_global_assignment -name VERILOG_FILE f18a_pll.v
+set_global_assignment -name VHDL_FILE f18a_top_altera.vhd
+set_global_assignment -name SDC_FILE f18a.sdc
+
+# The host bus pins are 5V on a real 9918A socket and need level shifting;
+# the FPGA side is 3.3V LVTTL.
+set_global_assignment -name STRATIX_DEVICE_IO_STANDARD "3.3-V LVTTL"
+set_global_assignment -name RESERVE_ALL_UNUSED_PINS_WEAK_PULLUP "AS INPUT TRI-STATED"
+set_global_assignment -name CYCLONEII_RESERVE_NCEO_AFTER_CONFIGURATION "USE AS REGULAR IO"
+
+# Jumper inputs are pulled up (jumper fitted = '0'), as on the original board.
+set_instance_assignment -name WEAK_PULL_UP_RESISTOR ON -to usr1_net
+set_instance_assignment -name WEAK_PULL_UP_RESISTOR ON -to usr2_net
+set_instance_assignment -name WEAK_PULL_UP_RESISTOR ON -to usr3_net
+set_instance_assignment -name WEAK_PULL_UP_RESISTOR ON -to usr4_net
+
+set_global_assignment -name OPTIMIZATION_MODE "HIGH PERFORMANCE EFFORT"
+set_global_assignment -name TIMING_ANALYZER_MULTICORNER_ANALYSIS ON
