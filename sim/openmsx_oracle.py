@@ -74,7 +74,7 @@ def _tcl_scene(i, scene, vram_file):
             continue
         lines.append(f"  vdpreg {r} {v & 0xFF}")
     lines.append("  debug cont")
-    lines.append(f"  after time 0.5 {{ screenshot -raw -doublesize -prefix /work/{scene.name}_; "
+    lines.append(f"  after time 0.5 {{ screenshot -raw -doublesize -prefix /work/{scene.name}__; "
                  f"{'scene' + str(i + 1)} }}")
     lines.append("}")
     return "\n".join(lines)
@@ -101,7 +101,7 @@ def _run(scenes, workdir):
     subprocess.run(["scp", "-q", f"{HOST}:{remote}/*.png", f"{workdir}/"], check=True)
     shots = {}
     for s in scenes:
-        png = next(workdir.glob(f"{s.name}_*.png"))
+        png = next(workdir.glob(f"{s.name}__*.png"))
         shots[s.name] = np.asarray(Image.open(png).convert("RGB")).astype(np.int32)
     return shots
 

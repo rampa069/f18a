@@ -53,6 +53,8 @@ entity f18a_raster is
       pal         : in  std_logic;       -- '1' = PAL, '0' = NTSC, read at the end of a frame
       hadj        : in  signed(0 to 3);  -- V9938 R18 set adjust: +n moves the picture n pixels left
       vadj        : in  signed(0 to 3);  --                       +n moves the picture n lines up
+      interlace   : in  std_logic := '0'; -- V9938 R9 IL: the odd fields are half a line lower
+      field       : out std_logic;       -- V9938 S#2 EO: toggles every frame, '1' = odd field
       frame_pal   : out std_logic;       -- standard in use
       hsync_n     : out std_logic;
       vsync_n     : out std_logic;
@@ -81,6 +83,7 @@ architecture rtl of f18a_raster is
    signal hsync_r       : std_logic := '0';
    signal vsync_r       : std_logic := '0';
    signal blank_r       : std_logic := '1';
+   signal field_r       : std_logic := '0';
 
 begin
 
@@ -103,6 +106,7 @@ begin
             if vcounter = vlast_r then
                vcounter <= (others => '0');
                select_geometry;
+               field_r <= not field_r;
             else
                vcounter <= vcounter + 1;
             end if;
@@ -122,6 +126,8 @@ begin
    -- the horizontal sync pulse.
    process (vga_clk)
       variable hpos : integer range -H_TOTAL to 2 * H_TOTAL;
+      variable vpos : integer range 0 to 2 * H_TOTAL;
+      variable vline : integer range 0 to 1;
    begin if rising_edge(vga_clk) then
       -- Position in the hsync pulse, wrapping at the end of the line.
       hpos := to_integer(hcounter) - to_integer(hsync_first_s);
@@ -134,9 +140,22 @@ begin
          hsync_r <= '0';
       end if;
 
-      if hcounter = hsync_first_s then
-         if vcounter >= vsync_first_s and
-            vcounter < vsync_first_s + V_SYNC_LINES then
+      -- Interlace: in the even fields the vertical sync starts and ends
+      -- half a line later, so the odd fields show half a line lower.
+      if interlace = '1' and field_r = '0' then
+         vpos := to_integer(hsync_first_s) + H_TOTAL / 2;
+         vline := 0;
+         if vpos >= H_TOTAL then
+            vpos := vpos - H_TOTAL;
+            vline := 1;                    -- the half line point is in the next line
+         end if;
+      else
+         vpos := to_integer(hsync_first_s);
+         vline := 0;
+      end if;
+      if to_integer(hcounter) = vpos then
+         if to_integer(vcounter) >= to_integer(vsync_first_s) + vline and
+            to_integer(vcounter) < to_integer(vsync_first_s) + vline + V_SYNC_LINES then
             vsync_r <= '1';
          else
             vsync_r <= '0';
@@ -158,6 +177,7 @@ begin
    -- horizontal lock.
    csync_n   <= not (hsync_r xor vsync_r);
    blank     <= blank_r;
+   field     <= field_r;
 
    raster_x  <= hcounter;
    raster_y  <= vcounter;

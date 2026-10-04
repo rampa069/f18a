@@ -97,6 +97,15 @@ def t2_blink(sc, r12, r13):
     return vram, regs, pal
 
 
+def bitmap_page_flip(sc, r9_or=0, r13=0):
+    """Page 1 (R#2) with page 0 shown by the R#9 even / odd alternation (even
+    field) or the R#13 blink state."""
+    vram, regs, pal = page1(sc)
+    regs[9] |= r9_or
+    regs[13] = r13
+    return vram, regs, pal
+
+
 def default_palette(sc):
     """Leave the palette as it is after a reset (the V9938 one)."""
     vram, regs, _ = sc
@@ -112,6 +121,8 @@ DISPLAY_SCENES = {
     "mc_212_scroll": lambda: scene("MC", 24, lines212=True, scroll=9),
     "t1": lambda: scene("T1", 4),
     "t2_212": lambda: scene("T2", 5, lines212=True),
+    "t1_scroll": lambda: scene("T1", 34, scroll=13),
+    "t2_212_scroll": lambda: scene("T2", 35, lines212=True, scroll=203),
     "t2_blink_on": lambda: t2_blink(scene("T2", 31), 0x4E, 0xF0),
     "t2_blink_fg0": lambda: t2_blink(scene("T2", 32, lines212=True), 0x0B, 0x30),
     "t2_blink_off": lambda: t2_blink(scene("T2", 33), 0x4E, 0x0F),
@@ -122,6 +133,7 @@ DISPLAY_SCENES = {
     "g4_scroll": lambda: scene("G4", 26, scroll=77),
     "g4_mag_tp": lambda: scene("G4", 9, tp=True, mag=True),
     "g4_page1": lambda: page1(scene("G4", 27, lines212=True)),
+    "g4_blink_page": lambda: bitmap_page_flip(scene("G4", 36), r13=0xF0),
     "g5_212": lambda: scene("G5", 10, lines212=True),
     "g6_212": lambda: scene("G6", 11, lines212=True),
     "g6_scroll": lambda: scene("G6", 28, scroll=150),
@@ -137,6 +149,8 @@ SCENES = {
     "mc": lambda: scene("MC", 3),
     "t1": lambda: scene("T1", 4),
     "t2_212": lambda: scene("T2", 5, lines212=True),
+    "t1_scroll": lambda: scene("T1", 34, scroll=13),
+    "t2_212_scroll": lambda: scene("T2", 35, lines212=True, scroll=203),
     "t2_blink_on": lambda: t2_blink(scene("T2", 31), 0x4E, 0xF0),
     "t2_blink_fg0": lambda: t2_blink(scene("T2", 32, lines212=True), 0x0B, 0x30),
     "t2_blink_off": lambda: t2_blink(scene("T2", 33), 0x4E, 0x0F),
@@ -144,6 +158,8 @@ SCENES = {
     "g3_212_scroll": lambda: scene("G3", 7, lines212=True, scroll=37),
     "g4_212": lambda: scene("G4", 8, lines212=True),
     "g4_mag_tp": lambda: scene("G4", 9, tp=True, mag=True),
+    "g4_page1": lambda: page1(scene("G4", 27, lines212=True)),
+    "g4_blink_page": lambda: bitmap_page_flip(scene("G4", 36), r13=0xF0),
     "g5_212": lambda: scene("G5", 10, lines212=True),
     "g6_212": lambda: scene("G6", 11, lines212=True),
     "g6_scroll": lambda: scene("G6", 28, scroll=150),

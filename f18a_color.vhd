@@ -245,9 +245,9 @@ begin
    tile_r <= lvl4(g7_code(3 to 5)) when g7_r = '1' else dout2(0 to 3);
    tile_g <= lvl4(g7_code(0 to 2)) when g7_r = '1' else dout2(4 to 7);
    tile_b <= dout2(8 to 11) when g7_r = '0' else
-             x"0" when g7_code(6 to 7) = "00" else
-             x"4" when g7_code(6 to 7) = "01" else
-             x"9" when g7_code(6 to 7) = "10" else
+             x"0" when g7_code(6) = '0' and g7_code(7) = '0' else
+             x"4" when g7_code(6) = '0' else
+             x"9" when g7_code(7) = '0' else
              x"F";
 
 end rtl;

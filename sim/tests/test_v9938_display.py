@@ -217,3 +217,34 @@ async def sprite2_status(dut):
     # Nine sprites on a line: 5S and the number of the 9th (sprite 10).
     s0 = await sprite_status(dut, entries([0x25], nine=True))
     assert s0 & 0x40 and s0 & 0x1F == 10, f"9th sprite: S#0 {s0:02x}, expected 5S and 10"
+
+
+@cocotb.test()
+async def interlace(dut):
+    """R9 IL: the vertical sync of the even fields is half a line later, so
+    the odd fields show half a line lower; S#2 EO toggles every frame."""
+    f = F18A(dut)
+    await f.reset(v9938=True)
+    await f.set_reg(1, 0x40)
+    await f.set_reg(9, 0x08)                   # IL
+    await f.set_reg(15, 2)
+    starts, eos = [], []
+    for _ in range(4):
+        await FallingEdge(dut.vsync_n_o)
+        starts.append(get_sim_time("ns"))
+        await Timer(1, "us")
+        eos.append((await f.read_status()) & 0x02)
+    periods = [(b - a) / LINE_NS for a, b in zip(starts, starts[1:])]
+    # Frame lengths alternate 262 +- 0.5 lines.
+    assert all(abs(abs(p - 262) - 0.5) < 0.01 for p in periods), f"interlaced frames: {periods}"
+    assert abs(periods[0] - periods[1]) > 0.9, f"frames do not alternate: {periods}"
+    assert len(set(eos)) == 2 and eos[0] != eos[1], f"EO does not toggle: {eos}"
+    await f.set_reg(9, 0x00)
+    a = None
+    for _ in range(3):
+        await FallingEdge(dut.vsync_n_o)
+        t = get_sim_time("ns")
+        if a is not None:
+            assert abs((t - a) / LINE_NS - 262) < 0.01, "not interlaced: 262 lines"
+        a = t
+    await f.set_reg(15, 0)

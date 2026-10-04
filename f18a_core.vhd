@@ -93,6 +93,8 @@ entity f18a_core is
       vsync_n_o            : out std_logic;
       csync_n_o            : out std_logic;  -- composite sync for RGB / SCART
       blank_o              : out std_logic;  -- '1' outside the picture (not display enable)
+      r9_pal_o             : out std_logic;  -- V9938 mode: R#9 NT ('1' = PAL), to drive pal_i
+      interlace_o          : out std_logic;  -- V9938 mode: R#9 IL (interlaced output)
 
       -- Feature Selection
       sprite_max_i         : in std_logic;   -- Default sprite max, '0' = 32, '1' = 4
@@ -129,6 +131,11 @@ architecture rtl of f18a_core is
    signal y_max_s          : std_logic;
    signal frame_pal_s      : std_logic;
    signal v38_lines212_s   : std_logic;                  -- V9938 display controls
+   signal v38_r9_s         : std_logic_vector(0 to 7);
+   signal field_s          : std_logic;                  -- S#2 EO
+   signal v38_blink_raw_s  : std_logic;                  -- R#13 blink state
+   signal page_odd_s       : std_logic;                  -- '0': show the even bitmap page
+   signal bmp_r2_s         : std_logic_vector(0 to 7);
    signal v38_vscroll_s    : unsigned(0 to 7);
    signal v38_hadj_s       : signed(0 to 3);
    signal v38_vadj_s       : signed(0 to 3);
@@ -332,6 +339,7 @@ begin
       vr             => v38_vr_s,
       hr             => v38_hr_s,
       v38_lines212   => v38_lines212_s,
+      v38_r9         => v38_r9_s,
       v38_vscroll    => v38_vscroll_s,
       v38_hadj       => v38_hadj_s,
       v38_vadj       => v38_vadj_s,
@@ -346,7 +354,9 @@ begin
       v38_r2         => v38_r2_s,
       v38_r7         => v38_r7_s,
       v38_blink      => v38_blink_s,
+      v38_blink_raw  => v38_blink_raw_s,
       v38_r12        => v38_r12_s,
+      eo             => field_s,
    -- VRAM Interface
       vdin           => cpu_dout_s,       -- In to CPU from *out* of VRAM
       vwe            => cpu_we_s,
@@ -428,6 +438,8 @@ begin
       pal            => pal_r,
       hadj           => v38_hadj_s,
       vadj           => v38_vadj_s,
+      interlace      => v38_r9_s(4),
+      field          => field_s,
       frame_pal      => frame_pal_s,
       hsync_n        => hsync_s,
       vsync_n        => vsync_s,
@@ -490,7 +502,7 @@ begin
       v9938          => v9938_i,
       bmp_en         => v38_bmp_s,
       bmp_mode       => v38_bmode_s,
-      bmp_r2         => v38_r2_s,
+      bmp_r2         => bmp_r2_s,
       bmp_tp         => v38_tp_s,
       textfg         => textfg_s,
       textbg         => textbg_s,
@@ -529,6 +541,7 @@ begin
       bml_trans      => bml_trans_s,
       bml_fat_i      => bml_fat_s,
       blink_on       => v38_blink_s,
+      v38_vscroll    => v38_vscroll_s,
       blink_fg       => v38_r12_s(0 to 3),
       blink_bg       => v38_r12_s(4 to 7),
    -- VRAM Interface
@@ -635,6 +648,14 @@ begin
    process (clk_pix_i) begin if rising_edge(clk_pix_i) then
       half_r <= raster_x_s(9);
    end if; end process;
+   r9_pal_o <= v38_r9_s(6);
+   interlace_o <= v38_r9_s(4);
+
+   -- Bitmap even / odd page (openMSX VDP::getEvenOddMask): the odd page bit
+   -- of R#2 (line bit 8) is cleared when the R#9 EO alternation is on in an
+   -- even field, or while the R#13 blink state is on.
+   page_odd_s <= not ((v38_r9_s(5) and not field_s) or v38_blink_raw_s);
+   bmp_r2_s <= v38_r2_s(0 to 1) & (v38_r2_s(2) and page_odd_s) & v38_r2_s(3 to 7);
    v38_g5_s <= '1' when v38_bmp_s = '1' and v38_bmode_s = "01" else '0';
    v38_g7_s <= '1' when v38_bmp_s = '1' and v38_bmode_s = "11" else '0';
 

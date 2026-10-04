@@ -107,6 +107,9 @@ entity f18a_tiles is
    -- V9938 T2 blink: characters with their bit set in the blink table
    -- (R#3 / R#10) use the R#12 colors while blink_on = '1'.
       blink_on       : in  std_logic := '0';
+   -- V9938 R#23: in the text modes it only moves the line inside the
+   -- characters, not the character rows (openMSX textModeCounter).
+      v38_vscroll    : in  unsigned(0 to 7) := (others => '0');
       blink_fg       : in  std_logic_vector(0 to 3) := "0000";
       blink_bg       : in  std_logic_vector(0 to 3) := "0000";
    -- VRAM Interface
@@ -187,6 +190,7 @@ architecture rtl of f18a_tiles is
    signal y_next_r      : unsigned(0 to 8);           -- register y_next input
    signal y_pos_r       : std_logic_vector(0 to 8);   -- register y_next input as std_logic_vector
    signal y_pix_row_r   : unsigned(0 to 8);
+   signal y_text_row_r  : unsigned(0 to 8);           -- V9938 text: line without R#23
    signal y_max_rows_r  : unsigned(0 to 5);
    signal y_tile_row_s  : unsigned(0 to 5);
    signal y_tile_dif_s  : unsigned(0 to 5);
@@ -544,6 +548,7 @@ begin
       y_pos_r <= std_logic_vector(y_next_in);
 
       y_pix_row_r <= unsigned('0' & vscroll_s) + y_next_in;
+      y_text_row_r <= '0' & (y_next_in(1 to 8) - v38_vscroll);
 
       if v9938 = '1' then
          y_max_rows_r <= NUM32;
@@ -557,8 +562,8 @@ begin
    end if; end process;
 
    -- Isolate the vertical tile count, 0..63.
-   y_tile_row_s <= y_pix_row_r(0 to 5);
-   y_tile_dif_s <= y_pix_row_r(0 to 5) - y_max_rows_r;   -- (0 to 47/59) - (24/30)
+   y_tile_row_s <= y_text_row_r(0 to 5) when v9938 = '1' and textmode_r = '1' else y_pix_row_r(0 to 5);
+   y_tile_dif_s <= y_tile_row_s - y_max_rows_r;          -- (0 to 47/59) - (24/30)
 
    -- When the counter increments from 31 to 32, the name table address will
    -- be determined by the vertical page size and the current vertical name table,

@@ -37,18 +37,18 @@ virtual pins).
 | `PVIDEOR/G/B` | 6-bit RGB (the F18A 4-bit color with the 2 MSBs repeated) |
 | `PVIDEOHS_N`, `PVIDEOVS_N`, `PVIDEOCS_N`, `BLANK_O` | Syncs and blank, active low syncs, `BLANK_O` = '1' outside the picture |
 | `DISPRESO` | '0' = 15 kHz (1368 `CLK21M` cycles per line, like the V9938), '1' = 31 kHz through a line doubler (684 cycles per line) |
-| `NTSC_PAL_TYPE`, `FORCED_V_MODE` | PAL / NTSC: R#9 bit 1 (NT) when `NTSC_PAL_TYPE` = '1', otherwise `FORCED_V_MODE`, like the original. NTSC 262 lines 59.9 Hz, PAL 313 lines 50.1 Hz |
-| `INTERLACEMODE` | Always '0' |
+| `NTSC_PAL_TYPE`, `FORCED_V_MODE` | PAL / NTSC: R#9 bit 1 (NT) when `NTSC_PAL_TYPE` = '1' (in V9938 mode read from the core, so 9Bh writes count too), otherwise `FORCED_V_MODE`, like the original. NTSC 262 lines 59.9 Hz, PAL 313 lines 50.1 Hz |
+| `INTERLACEMODE` | R#9 IL (V9938 mode); the odd fields are half a line lower |
 | `VGA_INT_FIELD`, `SPMAXSPR` | Default '0', so the wrapper also binds to the older `vdp` component without them (e.g. the [ZEMMIX](https://github.com/BigMist/ZEMMIX) `emsx_top`) |
 | `VDPSPEEDMODE`, `RATIOMODE`, `CENTERYJK_R25_N`, `LEGACY_VGA`, `VGA_INT_FIELD`, `SPMAXSPR`, `VDP_ID`, `OFFSET_Y` | Ignored |
 
 ## MSX2 compatibility
 
 With `V9938` = '1' the F18A behaves as a V9938 (beads f18a-5pv.1): all
-screen modes except the 80 column text mode (T2), sprite mode 2, the
-command engine (faster than a real V9938), the 512 color palette, R#18,
-R#23, line interrupts and the status registers.  Not yet: T2 / blink,
-interlace, VR = 0 (16 KB chips) addressing, collision coordinates.
+screen modes, sprite mode 2, the
+command engine, the 512 color palette, R#18, R#23, line interrupts,
+interlace and even / odd pages, T2 with blink and the status registers.
+Not yet: VR = 0 (16 KB chips) addressing, collision coordinates.
 
 With `V9938` = '0' it is a TMS9918A: MSX1 software works, and so that an
 MSX2 BIOS does not corrupt the display, register writes to R#8 and above

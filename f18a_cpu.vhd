@@ -76,6 +76,7 @@ entity f18a_cpu is
       vr          : in  std_logic;                    -- '1' outside the active lines (V9938 S#2 VR)
       hr          : in  std_logic;                    -- '1' outside the active pixels (V9938 S#2 HR)
       v38_lines212: out std_logic;                    -- V9938 R9 LN
+      v38_r9      : out std_logic_vector(0 to 7);     -- V9938 R9 (NT, IL, EO)
       v38_vscroll : out unsigned(0 to 7);             -- V9938 R23 vertical scroll
       v38_hadj    : out signed(0 to 3);               -- V9938 R18 set adjust, horizontal
       v38_vadj    : out signed(0 to 3);               --                       vertical
@@ -90,6 +91,8 @@ entity f18a_cpu is
       v38_r2      : out std_logic_vector(0 to 7);
       v38_r7      : out std_logic_vector(0 to 7);
       v38_blink   : out std_logic;                    -- V9938 T2: blink state on (R#12 colors)
+      v38_blink_raw : out std_logic;                  -- V9938 R#13 blink state (bitmap page flip)
+      eo          : in  std_logic := '0';             -- V9938 S#2 EO (field)
       v38_r12     : out std_logic_vector(0 to 7);
    -- VRAM Interface
       vdin        : in  std_logic_vector(0 to 7);
@@ -465,7 +468,7 @@ begin
 
 
    -- The status register number determines which status is returned.
-   process (v9938, v38_reg, vr, hr, cmd_tr, cmd_bd, cmd_ce, cmd_col, cmd_asx,
+   process (v9938, v38_reg, vr, hr, cmd_tr, cmd_bd, cmd_ce, cmd_col, cmd_asx, eo,
    reg15sreg_num, intr_ff, sp_5s_ff, sp_c_ff, sp_5th_reg, horz_ff,
    gpu_status, gpu_running, scanline, reg_val, blank,
    cnt_nano_sr, cnt_micro_sr, cnt_milli_sr, cnt_sec_sr)
@@ -484,7 +487,7 @@ begin
             status_reg <= "0000000" & horz_ff;
             clear_sr1 <= '1';
          when X"2" =>   -- TR, VR, HR, BD, 1, 1, EO, CE
-            status_reg <= cmd_tr & vr & hr & cmd_bd & "11" & '0' & cmd_ce;
+            status_reg <= cmd_tr & vr & hr & cmd_bd & "11" & eo & cmd_ce;
          when X"4" =>
             status_reg <= X"FE";
          when X"6" =>
@@ -1392,6 +1395,7 @@ begin
 
    -- V9938 display controls.
    v38_lines212 <= v9938 and v38_reg(9)(0);
+   v38_r9       <= v38_reg(9) when v9938 = '1' else (others => '0');
    v38_vscroll  <= unsigned(v38_reg(23)) when v9938 = '1' else (others => '0');
    v38_hadj     <= signed(v38_reg(18)(4 to 7)) when v9938 = '1' else (others => '0');
    v38_vadj     <= signed(v38_reg(18)(0 to 3)) when v9938 = '1' else (others => '0');
@@ -1543,6 +1547,7 @@ begin
 
    v38_blink <= v9938 and v38_blink_r and v38_m(4) and v38_reg(0)(5);   -- T2 (M1, M4)
    v38_r12   <= v38_reg(12);
+   v38_blink_raw <= v9938 and v38_blink_r;
 
    -- Host system data output.
    cd_o <= cd_out;

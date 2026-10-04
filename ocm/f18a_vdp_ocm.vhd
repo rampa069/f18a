@@ -174,6 +174,8 @@ architecture rtl of vdp is
    signal ctrl_1st_r    : std_logic_vector(7 downto 0) := (others => '0');
    signal r9_pal_r      : std_logic := '0';
    signal pal_s         : std_logic;
+   signal r9_pal_core_s : std_logic;
+   signal interlace_s   : std_logic;
 
    -- Interrupt synchronizer.
    signal int_n_s       : std_logic;
@@ -237,8 +239,13 @@ begin
 
    f18a_rst_n_s <= (not reset) and pll_locked_s;
 
-   -- PAL / NTSC selection as in the original VDP.
-   pal_s <= r9_pal_r when ntsc_pal_type = '1' else forced_v_mode;
+   -- PAL / NTSC selection as in the original VDP: R#9 NT (from the core in
+   -- V9938 mode, any write path; from the 99h writes in 9918A mode) when
+   -- NTSC_PAL_TYPE = '1', otherwise FORCED_V_MODE.
+   pal_s <=
+      forced_v_mode when ntsc_pal_type = '0' else
+      r9_pal_core_s when V9938 = '1' else
+      r9_pal_r;
 
    inst_f18a : entity work.f18a_core
    generic map (
@@ -265,6 +272,8 @@ begin
       vsync_n_o      => vs15_n_s,
       csync_n_o      => cs15_n_s,
       blank_o        => blank15_s,
+      r9_pal_o       => r9_pal_core_s,
+      interlace_o    => interlace_s,
       sprite_max_i   => '0',            -- 32 sprites per line, F18A default
       spi_clk_o      => open,
       spi_cs_o       => open,
@@ -384,7 +393,7 @@ begin
    pramadr  <= (others => '0');
    pramdbo  <= (others => '0');
 
-   interlacemode <= '0';
+   interlacemode <= interlace_s;
 
 
    --

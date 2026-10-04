@@ -274,10 +274,12 @@ class V9938:
         tp = self.transparent()
         out = self.border_line()
 
+        # Text modes (openMSX PixelRenderer::draw, textModeCounter): R#23
+        # only moves the line inside the characters, not the character rows.
         if mode == T1:
             fg, tbg = self.regs[7] >> 4, self.regs[7] & 0x0F
             for col in range(40):
-                name = self.vram_read(masked(self.name_base(), ((y // 8) * 40 + col + 0xC00), 12))
+                name = self.vram_read(masked(self.name_base(), ((line // 8) * 40 + col + 0xC00), 12))
                 bits = self.vram_read(masked(self.pattern_base(), name * 8 + (y & 7), 11))
                 for px in range(6):
                     c = fg if bits & (0x80 >> px) else tbg
@@ -296,9 +298,9 @@ class V9938:
                 bfg = bbg
             cbase = (self.regs[10] << 14) | (self.regs[3] << 6) | 0x3F
             for col in range(80):
-                name = self.vram_read(masked(self.name_base(), (y // 8) * 80 + col, 12))
+                name = self.vram_read(masked(self.name_base(), (line // 8) * 80 + col, 12))
                 bits = self.vram_read(masked(self.pattern_base(), name * 8 + (y & 7), 11))
-                attr = self.vram_read(masked(cbase, (y // 8) * 10 + col // 8, 9))
+                attr = self.vram_read(masked(cbase, (line // 8) * 10 + col // 8, 9))
                 blink = self.blink_state and attr & (0x80 >> (col & 7))
                 for px in range(6):
                     if blink:
@@ -353,7 +355,11 @@ class V9938:
     def _bitmap_line(self, y):
         """One display line of G4-G7: 256 (G4, G7) or 512 (G5, G6) codes."""
         mode = self.mode
-        base = self.name_base()
+        # Even / odd page (openMSX VDP::getEvenOddMask): line bit 8 (the odd
+        # page) is cleared when R#9 EO alternation is on in an even field
+        # (S#2 EO = 0), or while the R#13 blink state is on.
+        eo_mask = ((~self.regs[9] & 4) << 6 | (self.status[2] & 2) << 7) & ((not self.blink_state) << 8)
+        base = self.name_base() & (~(0x100 << 7) | (eo_mask << 7))
         if mode in PLANAR_MODES:
             vline = (base >> 7) & (0x100 | y)
             data = [self.vram[planar(vline * 256 + i)] for i in range(256)]
