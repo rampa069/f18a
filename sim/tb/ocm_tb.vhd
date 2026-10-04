@@ -63,6 +63,9 @@ begin
    clk21m <= not clk21m after 84 * T_UNIT;
 
    inst_vdp : entity work.vdp
+   generic map (
+      V9938             => '0'          -- the tests check the TMS9918A mode
+   )
    port map (
       clk21m            => clk21m,
       reset             => reset_i,

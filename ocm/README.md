@@ -29,7 +29,8 @@ virtual pins).
 | Ports | Behavior |
 |---|---|
 | `CLK21M`, `RESET` | 21.477 MHz system clock; a PLL makes the F18A clocks (85.91 MHz core = x4, 10.74 MHz pixel = /2) |
-| `REQ`, `ACK`, `WRT`, `ADR`, `DBO`, `DBI` | I/O 98h (data) and 99h (control / status) as a TMS9918A with the F18A extensions. 9Ah / 9Bh writes are ignored, reads return FFh. `ACK` follows `REQ` one cycle later like the original. `DBI` is valid 5 cycles (230 ns) after `REQ`; OCM samples it much later (420 ns at 3.58 MHz, 6 wait states in turbo modes) |
+| `V9938` (generic) | '1' (default): V9938 mode, 128 KB VRAM in internal RAM (128 M9K: Poseidon / EP4CGX150 class FPGAs). '0': TMS9918A + F18A, 16 KB |
+| `REQ`, `ACK`, `WRT`, `ADR`, `DBO`, `DBI` | I/O 98h (data) and 99h (control / status); in V9938 mode also 9Ah (palette) and 9Bh (indirect register), otherwise 9Ah / 9Bh writes are ignored. 9Ah / 9Bh reads return FFh. `ACK` follows `REQ` one cycle later like the original. `DBI` is valid 5 cycles (230 ns) after `REQ`; OCM samples it much later (420 ns at 3.58 MHz, 6 wait states in turbo modes) |
 | `INT_N` | Frame interrupt, synchronized to `CLK21M` |
 | `PRAM*` | Unused: the VRAM is inside the F18A. `PRAMWE_N` / `PRAMOE_N` stay high |
 | `PVIDEODHCLK`, `PVIDEODLCLK` | Same 4-phase sequence as the original VDP. **Required**: `emsx_top` uses them to schedule CPU / VDP SDRAM slots |
@@ -43,13 +44,13 @@ virtual pins).
 
 ## MSX2 compatibility
 
-The F18A is a TMS9918A, not a V9938.  MSX1 software works; MSX2 features
-are not available: the V9938/V9958 screen modes (SCREEN 4-8, 80 columns,
-SCREEN 10-12), the command engine, 128 KB VRAM, the 512 color palette,
-sprite mode 2, R#18 adjust, R#23 vertical scroll, line interrupts,
-interlace and the status registers S#1-S#9.
+With `V9938` = '1' the F18A behaves as a V9938 (beads f18a-5pv.1): all
+screen modes except the 80 column text mode (T2), sprite mode 2, the
+command engine (faster than a real V9938), the 512 color palette, R#18,
+R#23, line interrupts and the status registers.  Not yet: T2 / blink,
+interlace, VR = 0 (16 KB chips) addressing, collision coordinates.
 
-So that an MSX2 / MSX2+ BIOS does not corrupt the display, register writes
-to R#8 and above are ignored while the F18A is locked, instead of being
-masked to R#0-7 like a real 9918A does.  R#57 still unlocks the F18A
-extensions.  Full V9938 compatibility is tracked in beads (f18a-5pv).
+With `V9938` = '0' it is a TMS9918A: MSX1 software works, and so that an
+MSX2 BIOS does not corrupt the display, register writes to R#8 and above
+are ignored while the F18A is locked, instead of being masked to R#0-7 like
+a real 9918A does.  R#57 still unlocks the F18A extensions.

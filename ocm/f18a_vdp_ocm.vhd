@@ -74,6 +74,11 @@ use ieee.std_logic_1164.all;
 use ieee.numeric_std.all;
 
 entity vdp is
+   generic (
+      -- '1' = V9938 (MSX2): R#0-R#46, ports 9Ah / 9Bh, 128 KB VRAM in
+      -- internal RAM (128 M9K).  '0' = TMS9918A + F18A, 16 KB.
+      V9938             : std_logic := '1'
+   );
    port (
       -- VDP clock ... 21.477MHz
       clk21m            : in  std_logic;
@@ -156,6 +161,7 @@ architecture rtl of vdp is
    signal strobe_cnt_r  : integer range 0 to STROBE_CLKS := 0;
    signal rd_r          : std_logic := '0';
    signal mode_r        : std_logic := '0';
+   signal mode1_r       : std_logic := '0';              -- ports 9Ah / 9Bh
    signal csw_n_r       : std_logic := '1';
    signal csr_n_r       : std_logic := '1';
    signal cd_r          : std_logic_vector(7 downto 0) := (others => '0');
@@ -205,6 +211,11 @@ architecture rtl of vdp is
    signal vid_cs_n_r    : std_logic := '1';
    signal vid_blank_r   : std_logic := '1';
 
+   function vram_abits(v : std_logic) return integer is
+   begin
+      if v = '1' then return 17; else return 14; end if;
+   end function;
+
    function to6(c : std_logic_vector(3 downto 0)) return std_logic_vector is
    begin
       return c & c(3 downto 2);
@@ -230,6 +241,9 @@ begin
    pal_s <= r9_pal_r when ntsc_pal_type = '1' else forced_v_mode;
 
    inst_f18a : entity work.f18a_core
+   generic map (
+      VRAM_ABITS     => vram_abits(V9938)
+   )
    port map (
       clk_core_i     => clk_core_s,
       clk_pix_i      => clk_pix_s,
@@ -238,8 +252,8 @@ begin
       csw_n_i        => csw_n_r,
       csr_n_i        => csr_n_r,
       vr8_ignore_i   => '1',
-      v9938_i        => '0',            -- V9938 mode: f18a-5pv.1.12
-      mode1_i        => '0',
+      v9938_i        => V9938,
+      mode1_i        => mode1_r,
       int_n_o        => int_n_s,
       cd_i           => cd_r,
       cd_o           => cd_o_s,
@@ -314,12 +328,14 @@ begin
             end if;
 
          elsif req = '1' then
-            if adr(1) = '0' then
-               -- Port 98h (data) or 99h (control / status).
+            if adr(1) = '0' or V9938 = '1' then
+               -- Port 98h (data) or 99h (control / status), and in V9938
+               -- mode 9Ah (palette) and 9Bh (indirect register).
                busy_r       <= '1';
                strobe_cnt_r <= 1;
                rd_r         <= not wrt;
                mode_r       <= adr(0);
+               mode1_r      <= adr(1);
                cd_r         <= dbo;
                csw_n_r      <= not wrt;
                csr_n_r      <= wrt;
@@ -327,7 +343,7 @@ begin
                -- Follow the control port byte order to see R#9 writes.
                -- Any data port access or a status read resets it, as in
                -- the 9918A.
-               if adr(0) = '1' and wrt = '1' then
+               if adr(1) = '0' and adr(0) = '1' and wrt = '1' then
                   if ctrl_ff_r = '0' then
                      ctrl_1st_r <= dbo;
                      ctrl_ff_r  <= '1';
