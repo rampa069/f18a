@@ -89,8 +89,7 @@ def page1(sc):
     return vram, regs, pal
 
 
-# Scenes the 9918A tile engine can show in V9938 mode today: tables in the
-# first 16 KB, 192 / 212 lines, vertical scroll.
+# Scenes the core shows in V9938 mode (every mode but T2, f18a-5pv.1.6).
 DISPLAY_SCENES = {
     "g1": lambda: scene("G1", 1),
     "g1_212_scroll": lambda: scene("G1", 21, lines212=True, scroll=37),
@@ -106,6 +105,10 @@ DISPLAY_SCENES = {
     "g4_mag_tp": lambda: scene("G4", 9, tp=True, mag=True),
     "g4_page1": lambda: page1(scene("G4", 27, lines212=True)),
     "g5_212": lambda: scene("G5", 10, lines212=True),
+    "g6_212": lambda: scene("G6", 11, lines212=True),
+    "g6_scroll": lambda: scene("G6", 28, scroll=150),
+    "g7_212": lambda: scene("G7", 12, lines212=True),
+    "g7_scroll": lambda: scene("G7", 13, scroll=100),
 }
 
 SCENES = {
@@ -120,6 +123,7 @@ SCENES = {
     "g4_mag_tp": lambda: scene("G4", 9, tp=True, mag=True),
     "g5_212": lambda: scene("G5", 10, lines212=True),
     "g6_212": lambda: scene("G6", 11, lines212=True),
+    "g6_scroll": lambda: scene("G6", 28, scroll=150),
     "g7_212": lambda: scene("G7", 12, lines212=True),
     "g7_scroll": lambda: scene("G7", 13, scroll=100),
 }

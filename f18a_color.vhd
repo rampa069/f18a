@@ -67,6 +67,8 @@ entity f18a_color is
       bg_color    : in  std_logic_vector(0 to 5);
       show_bg     : in  std_logic;
       g5          : in  std_logic;                    -- V9938 G5: sprite colors split in two halves
+      g7          : in  std_logic;                    -- V9938 G7: tile entries and the border are GGGRRRBB
+      g7_bg       : in  std_logic_vector(0 to 7);     -- G7 border (R#7)
       half        : in  std_logic;                    -- G5 half pixel: '0' left (bits 3-2), '1' right (1-0)
       tile_r      : out std_logic_vector(0 to 3);
       tile_g      : out std_logic_vector(0 to 3);
@@ -163,6 +165,22 @@ architecture rtl of f18a_color is
    signal sprt_en       : std_logic;
    signal tile_en       : std_logic;
 
+   -- G7: the color is an 8-bit GGGRRRBB code, not a palette entry.  Sprites
+   -- use 16 fixed colors (openMSX Renderer::GRAPHIC7_SPRITE_PALETTE).
+   type g7spr_t is array (0 to 15) of std_logic_vector(0 to 7);
+   constant G7_SPRITE : g7spr_t := (
+      x"00", x"01", x"0C", x"0D", x"60", x"61", x"6C", x"6D",
+      x"9D", x"03", x"1C", x"1F", x"E0", x"E3", x"FC", x"FF");
+   signal g7_next       : std_logic_vector(0 to 7);
+   signal g7_code       : std_logic_vector(0 to 7);
+   signal g7_r          : std_logic := '0';
+
+   -- 3-bit V9938 level to the 4-bit output, like the palette (x << 1 | x >> 2).
+   function lvl4(c : std_logic_vector(0 to 2)) return std_logic_vector is
+   begin
+      return c & c(0);
+   end function;
+
 begin
 
    process (clk)
@@ -194,12 +212,18 @@ begin
    -- Sprite / tile / background address selector
    -- If the sprite does not have a pixel, or if there is a tile and
    -- it has priority, the color will be that of the tile.
-   sprt_pix <= sprt_color(0) and (not (tile_color(0) and tile_color(1)));
+   -- In G7 the tile entry has no PIX / PRI bits: tiles always show.
+   sprt_pix <= sprt_color(0) and (g7 or not (tile_color(0) and tile_color(1)));
 
 
    -- The blank bit and margin override any sprite or tile pixels.
    sprt_en <= sprt_pix and not show_bg;
-   tile_en <= tile_color(0) and not show_bg;
+   tile_en <= (tile_color(0) or g7) and not show_bg;
+
+   g7_next <=
+      G7_SPRITE(to_integer(unsigned(sprt_color(4 to 7)))) when sprt_en = '1' else
+      tile_color when tile_en = '1' else
+      g7_bg;
 
    addr2_next <=
       "0000" & sprt_color(4 to 5) when sprt_en = '1' and g5 = '1' and half = '0' else
@@ -212,11 +236,18 @@ begin
    -- in the counters module.
    process (vga_clk) begin if rising_edge(vga_clk) then
       addr2 <= addr2_next;
+      g7_code <= g7_next;
+      g7_r <= g7;
    end if; end process;
 
 
-   tile_r <= dout2(0 to 3);
-   tile_g <= dout2(4 to 7);
-   tile_b <= dout2(8 to 11);
+   -- G7 blue: 2 bits to the levels 0, 2, 4, 7.
+   tile_r <= lvl4(g7_code(3 to 5)) when g7_r = '1' else dout2(0 to 3);
+   tile_g <= lvl4(g7_code(0 to 2)) when g7_r = '1' else dout2(4 to 7);
+   tile_b <= dout2(8 to 11) when g7_r = '0' else
+             x"0" when g7_code(6 to 7) = "00" else
+             x"4" when g7_code(6 to 7) = "01" else
+             x"9" when g7_code(6 to 7) = "10" else
+             x"F";
 
 end rtl;

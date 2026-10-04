@@ -139,6 +139,7 @@ architecture rtl of f18a_core is
    signal v38_bmode_s      : std_logic_vector(0 to 1);
    signal v38_r2_s, v38_r7_s : std_logic_vector(0 to 7);
    signal v38_g5_s         : std_logic;
+   signal v38_g7_s         : std_logic;
    signal half_r           : std_logic := '0';           -- half pixel parity, aligned with x_pixel_pos
    signal v38_vr_s         : std_logic;                  -- V9938 S#2 VR / HR
    signal v38_hr_s         : std_logic;
@@ -253,6 +254,7 @@ architecture rtl of f18a_core is
 
    -- Sprite to VRAM
    signal sprt_addr_s      : std_logic_vector(0 to 16);
+   signal sprt_vaddr_s     : std_logic_vector(0 to 16);  -- physical
 
 
    -- Internal options
@@ -300,7 +302,7 @@ begin
       tile_addr      => tile_addr_s,
       tile_dout      => tile_dout_s,
    -- Sprite Interface
-      sprt_addr      => sprt_addr_s
+      sprt_addr      => sprt_vaddr_s
    );
 
 
@@ -566,7 +568,7 @@ begin
       v38_spd        => v38_spd_s,
    -- VRAM Interface
       vdin           => tile_dout_s,      -- In to Sprite from *out* of VRAM
-      vaddr          => sprt_addr_s,
+      vaddr          => sprt_addr_s,         -- logical
    -- Outputs
       sprt_color     => sprt_color_s,
       sprt_cf        => sp_cf_s,
@@ -590,6 +592,8 @@ begin
       bg_color       => bg_color_s,
       show_bg        => show_bg,
       g5             => v38_g5_s,
+      g7             => v38_g7_s,
+      g7_bg          => v38_r7_s,
       half           => half_r,
       tile_r         => tile_r_s,
       tile_g         => tile_g_s,
@@ -625,6 +629,11 @@ begin
       half_r <= raster_x_s(9);
    end if; end process;
    v38_g5_s <= '1' when v38_bmp_s = '1' and v38_bmode_s = "01" else '0';
+   v38_g7_s <= '1' when v38_bmp_s = '1' and v38_bmode_s = "11" else '0';
+
+   -- G6 / G7: the sprite tables are in the planar (rotated) VRAM too.
+   sprt_vaddr_s <= sprt_addr_s(16) & sprt_addr_s(0 to 15) when v38_bmp_s = '1' and v38_bmode_s(0) = '1' else
+                   sprt_addr_s;
 
    -- Use TL1 as the background color palette selector.  In G5 the border
    -- (and transparent color 0) alternates between R7 bits 3-2 and 1-0.

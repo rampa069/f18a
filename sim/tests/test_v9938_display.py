@@ -23,7 +23,12 @@ def model_frame(model, standard="ntsc"):
     top, bottom, _ = GEOM15[standard]
     if model.lines == 212:
         top, bottom = top - 10, bottom - 10
-    rgb = np.array([[expand(c) for c in p] for p in model.palette], dtype=np.uint8)
+    if model.mode == vm.G7:
+        # GGGRRRBB, the 2-bit blue as the levels 0, 2, 4, 7.
+        rgb = np.array([[expand((c >> 2) & 7), expand(c >> 5), expand((0, 2, 4, 7)[c & 3])]
+                        for c in range(256)], dtype=np.uint8)
+    else:
+        rgb = np.array([[expand(c) for c in p] for p in model.palette], dtype=np.uint8)
     frame = np.empty((top + model.lines + bottom, W15, 3), dtype=np.uint8)
     frame[:, :] = rgb[model.border()]
     if model.mode == vm.G5:
@@ -63,7 +68,8 @@ async def load(f, vram, regs, pal, vram_size=0x10000):
 async def render_scene(dut, name):
     vram, regs, pal = v9938_scenes.DISPLAY_SCENES[name]()
     f = F18A(dut)
-    await load(f, vram, regs, pal)
+    # G6 / G7 use the whole 128 KB (two interleaved 64 KB banks).
+    await load(f, vram, regs, pal, vram_size=len(vram) if regs[0] & 0x08 and regs[0] & 0x02 else 0x10000)
     await FallingEdge(dut.vsync_n_o)
     got = mask_banner(await f.capture_frame())
     model = vm.V9938(vram, regs, pal)

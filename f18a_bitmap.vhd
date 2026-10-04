@@ -47,8 +47,9 @@
 --            in the planar (rotated) VRAM layout.
 --
 -- Line buffer entry: PIX | PRI | palette select (2) | color (4).  Color 0
--- is transparent (PIX = 0, the border color shows) unless TP.  G7 needs
--- the 8-bit colors of f18a-5pv.1.10 and is not complete here.
+-- is transparent (PIX = 0, the border color shows) unless TP.  In G7 the
+-- entry is the 8-bit GGGRRRBB color itself (G7 has no transparency), which
+-- f18a_color shows without the palette.
 
 library ieee;
 use ieee.std_logic_1164.all;
@@ -132,7 +133,7 @@ begin
          when "10"   => color_s <= "00" & data_r(4 to 5);
          when others => color_s <= "00" & data_r(6 to 7);
          end case;
-      when "11" =>                                          -- G7, f18a-5pv.1.10
+      when "11" =>                                          -- G7: one pixel per byte, see din_r
          color_s <= data_r(4 to 7);
       when others =>                                        -- G4, G6, 4 bits, MSB first
          if pix_r(1) = '0' then
@@ -200,7 +201,7 @@ begin
             if mode = "01" then
                din_r <= pix_flag(vdin(0 to 1), tp) & '0' & "00" & "00" & vdin(0 to 1);
             elsif mode = "11" then
-               din_r <= pix_flag(vdin(4 to 7), tp) & '0' & "00" & vdin(4 to 7);
+               din_r <= vdin;                       -- G7: GGGRRRBB
             else
                din_r <= pix_flag(vdin(0 to 3), tp) & '0' & "00" & vdin(0 to 3);
             end if;

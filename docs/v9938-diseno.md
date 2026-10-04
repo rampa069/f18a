@@ -138,9 +138,11 @@ buffer de línea y se muestra el otro. Se mantiene el reparto actual:
 | Sprites modo 2 nuevos | G3-G7 | Nuevo: 8 por línea, color por línea, CC/IC/EC, colisiones con coordenadas (S#3-S#6) |
 | Color / paleta | todos | Ampliar: paleta del V9938 (16 entradas de 9 bits, R16 + 9Ah), G7 de 256 colores fijos (3-3-2), TP (R8). Salida a 4 bits por canal como ahora (3 bits del V9938 replicados) |
 
-El buffer de línea pasa de 8 bits por píxel (PIX, PRI, índice de 6 bits) a
-lo que necesita G7 (8 bits de color directo) más los flags: se ensancha a
-10 bits. Las placas MiST tienen DAC de 6 bits por canal; la salida puede
+El buffer de línea sigue en 8 bits por píxel (PIX, PRI, índice de 6 bits):
+en G7 la entrada es directamente el color GGGRRRBB, porque G7 no tiene
+transparencia ni prioridad, y `f18a_color` lo convierte a RGB sin pasar
+por la paleta (azul de 2 bits a los niveles 0, 2, 4, 7, como openMSX). Los
+sprites de G7 usan los 16 colores fijos y el borde es R#7 entero. Las placas MiST tienen DAC de 6 bits por canal; la salida puede
 crecer a 6 bits más adelante sin cambiar el resto.
 
 ## 7. Motor de comandos

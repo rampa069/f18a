@@ -38,6 +38,7 @@ virtual pins).
 | `DISPRESO` | '0' = 15 kHz (1368 `CLK21M` cycles per line, like the V9938), '1' = 31 kHz through a line doubler (684 cycles per line) |
 | `NTSC_PAL_TYPE`, `FORCED_V_MODE` | PAL / NTSC: R#9 bit 1 (NT) when `NTSC_PAL_TYPE` = '1', otherwise `FORCED_V_MODE`, like the original. NTSC 262 lines 59.9 Hz, PAL 313 lines 50.1 Hz |
 | `INTERLACEMODE` | Always '0' |
+| `VGA_INT_FIELD`, `SPMAXSPR` | Default '0', so the wrapper also binds to the older `vdp` component without them (e.g. the [ZEMMIX](https://github.com/BigMist/ZEMMIX) `emsx_top`) |
 | `VDPSPEEDMODE`, `RATIOMODE`, `CENTERYJK_R25_N`, `LEGACY_VGA`, `VGA_INT_FIELD`, `SPMAXSPR`, `VDP_ID`, `OFFSET_Y` | Ignored |
 
 ## MSX2 compatibility

@@ -118,9 +118,9 @@ entity vdp is
       ntsc_pal_type     : in  std_logic;
       forced_v_mode     : in  std_logic;
       legacy_vga        : in  std_logic;
-      vga_int_field     : in  std_logic;
+      vga_int_field     : in  std_logic := '0';   -- default: older emsx_top (ZEMMIX) has no such port
 
-      spmaxspr          : in  std_logic;
+      spmaxspr          : in  std_logic := '0';   -- default: older emsx_top (ZEMMIX) has no such port
 
       vdp_id            : in  std_logic_vector( 4 downto 0);
       offset_y          : in  std_logic_vector( 6 downto 0)
