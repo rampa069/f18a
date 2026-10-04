@@ -125,7 +125,7 @@ architecture rtl of f18a_counters is
    signal y_margin_reg : std_logic;
 
    signal row30reg   : std_logic;
-   signal y_count_en : std_logic;
+   signal y_count_en : std_logic := '0';
 
    signal x_pixel_pos_reg  : unsigned(0 to 8);     -- current x location for tiles
    signal x_pixel_pos_next : unsigned(0 to 8);
@@ -151,13 +151,13 @@ architecture rtl of f18a_counters is
 
 
    -- Y 1x-pixels
-   signal y_count : unsigned(0 to 8);  -- 0 to 480 == 9-bits
+   signal y_count : unsigned(0 to 8) := (others => '0');  -- 0 to 480 == 9-bits
 
    -- Y 2x-pixels
    signal y_half : unsigned(0 to 7);
 
    -- Scan line counter
-   signal scanline_cnt     : unsigned(0 to 8);
+   signal scanline_cnt     : unsigned(0 to 8) := (others => '0');
    signal scanline_reset   : std_logic;
 
 begin

@@ -54,33 +54,15 @@ use ieee.numeric_std.all;
 use ieee.std_logic_unsigned.all;
 use ieee.std_logic_arith.all;
 
--- For Xilinx specific primitives.
-library unisim;
-use unisim.vcomponents.all;
-
-
 --
--- Make two single-port buffers from one dual-port Block RAM
--- This specific configuration can not be inferred, so the
--- Xilinx specific primitives must be used.
+-- Two single-port 512x8 line buffers, inferred from generic VHDL so the core
+-- is vendor independent and simulates without the Xilinx unisim library.
 --
--- Originally the line buffers were inferred with generic
--- VHDL, but using two Block RAMs for the line buffers was
--- wasteful, especially on the 250K device.
+-- The original version used a Xilinx RAMB16_S18_S18 primitive to pack both
+-- buffers into one Block RAM (READ_FIRST on both ports).  The behavior here
+-- is identical: each port has its own half and reads the old data on write.
 --
 
--- The tile line buffers are 512 pixels by 8-bits per pixel.
---
---    7     6     5     4     3     2     1     0
--- | PIX | PRI |           6-bit address           |
---
--- PIX = if there is a tile pixel or not, used to facilitate
---       transparent tile pixels.  If PIX = 0 then the tile
---       does not have a pixel for this location.  If PIX = 1
---       then the 6-bit color address is valid and PRI should
---       be considered to determine the final color.
--- PRI = priority over sprites.  1 = priority
---
 entity f18a_tile_linebuf is
    generic (
       ADDR_WIDTH : integer := 9;
@@ -101,63 +83,31 @@ end f18a_tile_linebuf;
 
 architecture rtl of f18a_tile_linebuf is
 
-   -- Internal address size is 1-bit larger than data address
-   -- to force using 1 Block RAM for both line buffers.
-   signal addr_a  : std_logic_vector(0 to ADDR_WIDTH);
-
-   -- The native Block RAM in the FPGA is 16-bits wide (ignoring the 2 parity bits)
-   signal din_a   : std_logic_vector(0 to 15);
-   signal dout_a  : std_logic_vector(0 to 15);
-
-   signal addr_b  : std_logic_vector(0 to ADDR_WIDTH);
-   signal din_b   : std_logic_vector(0 to 15);
-   signal dout_b  : std_logic_vector(0 to 15);
-
+   type ram_t is array (0 to 2**ADDR_WIDTH - 1) of std_logic_vector(0 to DATA_WIDTH - 1);
+   signal ram1 : ram_t := (others => (others => '0'));
+   signal ram2 : ram_t := (others => (others => '0'));
 
 begin
 
-   -- Force the dual-port RAM in to two single-port RAM blocks.
-   addr_a <= '0' & addr1;
-   addr_b <= '1' & addr2;
+   -- Inferred read_first rams.
+   process (clk)
+   begin
+      if rising_edge(clk) then
+         dout1 <= ram1(conv_integer(addr1));
+         if we1 = '1' then
+            ram1(conv_integer(addr1)) <= din1;
+         end if;
+      end if;
+   end process;
 
-   -- Only using 8-bits.
-   din_a <= din1 & x"00";
-   din_b <= din2 & x"00";
-
-   -- Drop the unused data bits.
-   dout1 <= dout_a(0 to DATA_WIDTH - 1);
-   dout2 <= dout_b(0 to DATA_WIDTH - 1);
-
-
-   RAMB16_S18_S18_inst : RAMB16_S18_S18
-   generic map (
-      INIT_A => X"00000", --  Value of output RAM registers on Port A at start-up
-      INIT_B => X"00000", --  Value of output RAM registers on Port B at start-up
-      SRVAL_A => X"00000", --  Port A output value upon SSR assertion
-      SRVAL_B => X"00000", --  Port B output value upon SSR assertion
-      WRITE_MODE_A => "READ_FIRST", --  WRITE_FIRST, READ_FIRST or NO_CHANGE
-      WRITE_MODE_B => "READ_FIRST", --  WRITE_FIRST, READ_FIRST or NO_CHANGE
-      SIM_COLLISION_CHECK => "ALL") -- "NONE", "WARNING", "GENERATE_X_ONLY", "ALL"
-   port map (
-      DOA => dout_a,    -- Port A 16-bit Data Output
-      DOB => dout_b,    -- Port B 16-bit Data Output
-      DOPA => open,     -- Port A 2-bit Parity Output
-      DOPB => open,     -- Port B 2-bit Parity Output
-      ADDRA => addr_a,  -- Port A 10-bit Address Input
-      ADDRB => addr_b,  -- Port B 10-bit Address Input
-      CLKA => clk,      -- Port A Clock
-      CLKB => clk,      -- Port B Clock
-      DIA => din_a,     -- Port A 16-bit Data Input
-      DIB => din_b,     -- Port B 16-bit Data Input
-      DIPA => "00",     -- Port A 2-bit parity Input
-      DIPB => "00",     -- Port B 2-bit parity Input
-      ENA => '1',       -- Port A RAM Enable Input
-      ENB => '1',       -- Port B RAM Enable Input
-      SSRA => '0',      -- Port A Synchronous Set/Reset Input
-      SSRB => '0',      -- Port B Synchronous Set/Reset Input
-      WEA => we1,       -- Port A Write Enable Input
-      WEB => we2        -- Port B Write Enable Input
-   );
-
+   process (clk)
+   begin
+      if rising_edge(clk) then
+         dout2 <= ram2(conv_integer(addr2));
+         if we2 = '1' then
+            ram2(conv_integer(addr2)) <= din2;
+         end if;
+      end if;
+   end process;
 
 end rtl;

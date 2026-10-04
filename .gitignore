@@ -5,3 +5,14 @@
 .beads-credential-key
 .beads/proxieddb/
 *.gate.lock*
+
+# Python / simulación
+.venv/
+__pycache__/
+sim_build/
+work/
+results.xml
+.pytest_cache/
+
+# macOS
+.DS_Store

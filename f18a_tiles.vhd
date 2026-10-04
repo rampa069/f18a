@@ -1246,7 +1246,7 @@ begin
                shift_x <= SHIFT_LOAD;
             end if;
 
-            pixcnt_x <= pixcnt_r + 1;
+            pixcnt_x <= (pixcnt_r + 1) mod 8;   -- wraps like the 3-bit hardware counter
 
             -- The first tile may be partial due to scrolling, so shift
             -- without writing to the line buffer until the pixel offset

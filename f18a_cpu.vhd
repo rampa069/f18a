@@ -238,9 +238,9 @@ architecture rtl of f18a_cpu is
    signal clear_sr1     : std_logic;                  -- clear SR1
 
    -- Status bits
-   signal sp_c_ff       : std_logic;
-   signal sp_5s_ff      : std_logic;
-   signal sp_5th_reg    : std_logic_vector(0 to 4);
+   signal sp_c_ff       : std_logic := '0';
+   signal sp_5s_ff      : std_logic := '0';
+   signal sp_5th_reg    : std_logic_vector(0 to 4) := "00000";
 
    -- Extra status
    signal horz_en       : std_logic;
@@ -316,11 +316,11 @@ architecture rtl of f18a_cpu is
    signal reg31bml_trns : std_logic;                  -- '1' to set "00" pixels as transparent
    signal reg31bml_fat  : std_logic;                  -- '1' to set BML fat-pixel mode
 
-   signal reg32bmlba    : std_logic_vector(0 to 7);   -- bitmap layer base address
-   signal reg33bml_x    : std_logic_vector(0 to 7);   -- bitmap layer x location
-   signal reg34bml_y    : std_logic_vector(0 to 7);   -- bitmap layer y location
-   signal reg35bml_w    : std_logic_vector(0 to 7);   -- bitmap layer width
-   signal reg36bml_h    : std_logic_vector(0 to 7);   -- bitmap layer height
+   signal reg32bmlba    : std_logic_vector(0 to 7) := x"00";   -- bitmap layer base address
+   signal reg33bml_x    : std_logic_vector(0 to 7) := x"00";   -- bitmap layer x location
+   signal reg34bml_y    : std_logic_vector(0 to 7) := x"00";   -- bitmap layer y location
+   signal reg35bml_w    : std_logic_vector(0 to 7) := x"00";   -- bitmap layer width
+   signal reg36bml_h    : std_logic_vector(0 to 7) := x"00";   -- bitmap layer height
 
    signal reg47dpm      : std_logic;                  -- data-port write mode
    signal reg47auto     : std_logic;                  -- palette reg auto inc
