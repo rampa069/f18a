@@ -85,6 +85,10 @@ package f18a_video_pkg is
    constant GEOM_PAL  : video_geom_t := (
       vtotal => 313, vsize => 294, ystart => 51, ystart30 => 27);
 
+   -- V9938 212-line mode (R9 LN): the active area grows 10 lines up and 10
+   -- down, the borders shrink (openMSX VDP::execLineCountReset).
+   constant LINES_212_SHIFT     : integer := 10;
+
    -- Vertical sync, lines after the picture.
    constant V_BLANK_BEFORE_SYNC : integer := 3;
    constant V_SYNC_LINES        : integer := 3;

@@ -64,6 +64,7 @@ entity f18a_tiles is
       pgba           : in  std_logic_vector(0 to 2);
       gmode          : in  unsigned(0 to 3);
       row30          : in  std_logic;                 -- 1 when 30 rows
+      v9938          : in  std_logic;                 -- 1 in V9938 mode: 32 rows (256 lines) wrap
       textfg         : in  std_logic_vector(0 to 3);
       textbg         : in  std_logic_vector(0 to 3);
    -- F18A specific
@@ -113,6 +114,7 @@ architecture rtl of f18a_tiles is
 
    constant NUM24 : unsigned(0 to 5) := "011000"; -- 24
    constant NUM30 : unsigned(0 to 5) := "011110"; -- 30
+   constant NUM32 : unsigned(0 to 5) := "100000"; -- 32, V9938: rows wrap at 256 lines
 
    constant ADDR_WIDTH : integer := 9;
    constant DATA_WIDTH : integer := 8;
@@ -512,7 +514,9 @@ begin
 
       y_pix_row_r <= unsigned('0' & vscroll_s) + y_next_in;
 
-      if row30 = '0' then
+      if v9938 = '1' then
+         y_max_rows_r <= NUM32;
+      elsif row30 = '0' then
          y_max_rows_r <= NUM24;
       else
          y_max_rows_r <= NUM30;

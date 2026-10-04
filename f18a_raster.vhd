@@ -51,6 +51,8 @@ entity f18a_raster is
       vga_clk     : in  std_logic;       -- pixel clock, 10.74MHz
       rst_n       : in  std_logic;
       pal         : in  std_logic;       -- '1' = PAL, '0' = NTSC, read at the end of a frame
+      hadj        : in  signed(0 to 3);  -- V9938 R18 set adjust: +n moves the picture n pixels left
+      vadj        : in  signed(0 to 3);  --                       +n moves the picture n lines up
       frame_pal   : out std_logic;       -- standard in use
       hsync_n     : out std_logic;
       vsync_n     : out std_logic;
@@ -74,6 +76,8 @@ architecture rtl of f18a_raster is
    signal vlast_r       : unsigned(0 to 9) := to_unsigned(GEOM_NTSC.vtotal - 1, 10);
    signal vsize_r       : unsigned(0 to 9) := to_unsigned(GEOM_NTSC.vsize, 10);
 
+   signal hsync_first_s : unsigned(0 to 9);
+   signal vsync_first_s : unsigned(0 to 9);
    signal hsync_r       : std_logic := '0';
    signal vsync_r       : std_logic := '0';
    signal blank_r       : std_logic := '1';
@@ -109,18 +113,30 @@ begin
       end if;
    end process;
 
+   -- The set adjust (V9938 R18) moves the picture against the syncs; the
+   -- picture keeps its raster position and the syncs move the other way.
+   hsync_first_s <= to_unsigned(H_SYNC_FIRST + 2 * to_integer(hadj), 10);
+   vsync_first_s <= vsize_r + to_unsigned(V_BLANK_BEFORE_SYNC + 8, 10) + unsigned(resize(vadj, 10)) - 8;
+
    -- Syncs and blank, registered.  The vertical sync starts and ends with
    -- the horizontal sync pulse.
-   process (vga_clk) begin if rising_edge(vga_clk) then
-      if hcounter >= H_SYNC_FIRST and hcounter < H_SYNC_END then
+   process (vga_clk)
+      variable hpos : integer range -H_TOTAL to 2 * H_TOTAL;
+   begin if rising_edge(vga_clk) then
+      -- Position in the hsync pulse, wrapping at the end of the line.
+      hpos := to_integer(hcounter) - to_integer(hsync_first_s);
+      if hpos < 0 then
+         hpos := hpos + H_TOTAL;
+      end if;
+      if hpos < H_SYNC_END - H_SYNC_FIRST then
          hsync_r <= '1';
       else
          hsync_r <= '0';
       end if;
 
-      if hcounter = H_SYNC_FIRST then
-         if vcounter >= vsize_r + V_BLANK_BEFORE_SYNC and
-            vcounter < vsize_r + V_BLANK_BEFORE_SYNC + V_SYNC_LINES then
+      if hcounter = hsync_first_s then
+         if vcounter >= vsync_first_s and
+            vcounter < vsync_first_s + V_SYNC_LINES then
             vsync_r <= '1';
          else
             vsync_r <= '0';

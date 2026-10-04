@@ -75,6 +75,10 @@ entity f18a_cpu is
       blank       : in  std_logic;                    -- '1' when blanking (horz and vert) for GPU
       vr          : in  std_logic;                    -- '1' outside the active lines (V9938 S#2 VR)
       hr          : in  std_logic;                    -- '1' outside the active pixels (V9938 S#2 HR)
+      v38_lines212: out std_logic;                    -- V9938 R9 LN
+      v38_vscroll : out unsigned(0 to 7);             -- V9938 R23 vertical scroll
+      v38_hadj    : out signed(0 to 3);               -- V9938 R18 set adjust, horizontal
+      v38_vadj    : out signed(0 to 3);               --                       vertical
    -- VRAM Interface
       vdin        : in  std_logic_vector(0 to 7);
       vwe         : out std_logic;
@@ -249,6 +253,7 @@ architecture rtl of f18a_cpu is
    signal v38_reg       : v38_regs_t := (others => (others => '0'));
    signal v38_m         : std_logic_vector(0 to 4);   -- M5 M4 M3 M2 M1
    signal v38_planar    : std_logic;                  -- G6 / G7: rotated VRAM addresses
+   signal is_v38reg_s   : std_logic;                  -- register number is a V9938 R8-R46
    signal v38_carry     : std_logic;                  -- address carries into R14
    signal v38_r16_wr    : std_logic := '0';           -- R16 written, reset the palette byte latch
    signal v38_pal_ff    : std_logic := '0';
@@ -562,7 +567,14 @@ begin
 
 
    -- Horizontal interrupt flag and edge detect, disable if reg19horz is 0.
-   horz_intr <= '1' when scanline = unsigned(reg19horz) and unsigned(reg19horz) /= 0 else '0';
+   -- In V9938 mode the line interrupt is at the end of the display line
+   -- (counted with the R23 scroll) equal to R19.  scanline is the display
+   -- line + 1 and changes at the start of a line, so the end of line N is
+   -- when it becomes N + 2.
+   horz_intr <=
+      '1' when v9938 = '1' and scanline = unsigned(v38_reg(19)) - unsigned(v38_reg(23)) + 2 else
+      '1' when v9938 = '0' and scanline = unsigned(reg19horz) and unsigned(reg19horz) /= 0 else
+      '0';
    process (clk) begin if rising_edge(clk) then
       horz_en <= '0';
       horz_last <= horz_intr;
@@ -885,8 +897,9 @@ begin
    is_vr0to7_s <= '1' when reg_sel < "001000" else '0';
    is_vr57_s   <= '1' when ramaddr(0 to 5) = "111001" else '0';
    -- In V9938 mode R8-R46 are V9938 registers, not F18A registers.
-   reg_we      <= (is_vr0to7_s or is_vr57_s or reg57unlock) and
-                  not (v9938 and to_std_logic(reg_sel >= "001000" and reg_sel <= "101110"));
+   -- R8-R46: not R0-R7 ("000xxx"), not R47 ("101111"), not R48-R63 ("11xxxx").
+   is_v38reg_s <= '1' when reg_sel(0 to 2) /= "000" and reg_sel(0 to 1) /= "11" and reg_sel /= "101111" else '0';
+   reg_we      <= (is_vr0to7_s or is_vr57_s or reg57unlock) and not (v9938 and is_v38reg_s);
 
    -- Track consecutive writes to VR57 with "000111xx" data.  When only
    -- considering the low 3-bits for a register, this would be the same
@@ -1280,6 +1293,12 @@ begin
       end if;
    end process;
 
+
+   -- V9938 display controls.
+   v38_lines212 <= v9938 and v38_reg(9)(0);
+   v38_vscroll  <= unsigned(v38_reg(23)) when v9938 = '1' else (others => '0');
+   v38_hadj     <= signed(v38_reg(18)(4 to 7)) when v9938 = '1' else (others => '0');
+   v38_vadj     <= signed(v38_reg(18)(0 to 3)) when v9938 = '1' else (others => '0');
 
    -- V9938 registers R0-R46.
    v38_m      <= v38_reg(0)(4) & v38_reg(0)(5) & v38_reg(0)(6) & v38_reg(1)(4) & v38_reg(1)(3);

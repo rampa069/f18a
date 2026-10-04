@@ -81,6 +81,16 @@ def scene(mode, seed, lines212=False, scroll=0, tp=False, mag=False):
     return vram, regs, pal
 
 
+# Scenes the 9918A tile engine can show in V9938 mode today: tables in the
+# first 16 KB, 192 / 212 lines, vertical scroll.
+DISPLAY_SCENES = {
+    "g1": lambda: scene("G1", 1),
+    "g1_212_scroll": lambda: scene("G1", 21, lines212=True, scroll=37),
+    "g2_212": lambda: scene("G2", 22, lines212=True),
+    "g2_scroll": lambda: scene("G2", 23, scroll=200),
+    "mc_212_scroll": lambda: scene("MC", 24, lines212=True, scroll=9),
+}
+
 SCENES = {
     "g1": lambda: scene("G1", 1),
     "g2": lambda: scene("G2", 2),

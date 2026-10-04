@@ -65,6 +65,8 @@ entity f18a_counters is
       y_tick         : in std_logic;
       y_max          : in std_logic;
       frame_pal      : in std_logic;            -- PAL geometry in use, see f18a_video_pkg
+      lines212       : in std_logic;            -- V9938 R9 LN: 212 active lines
+      vscroll        : in unsigned(0 to 7);     -- V9938 R23 vertical scroll (0 for a 9918A)
       sprt_yreal     : in std_logic;            -- 1 to use real sprite location, 0 for original off-by-one
       gmode          : in unsigned(0 to 3);
       row30          : in std_logic;            -- 1 when 30 rows
@@ -226,15 +228,24 @@ begin
    -- Vertical geometry.  Each area starts 2 lines after its scan line
    -- reset; when the 30 row area starts on line 0 or 1, the reset is at the
    -- end of the previous frame.
-   process (frame_pal)
-      variable g : video_geom_t;
+   process (frame_pal, lines212)
+      variable g      : video_geom_t;
+      variable ystart : integer;
+      variable lines  : integer;
    begin
       g := video_geom(frame_pal);
-      ystart_s    <= to_unsigned(g.ystart, 10);
-      yend_s      <= to_unsigned(g.ystart + 191, 10);
+      if lines212 = '1' then
+         ystart := g.ystart - LINES_212_SHIFT;
+         lines  := 212;
+      else
+         ystart := g.ystart;
+         lines  := 192;
+      end if;
+      ystart_s    <= to_unsigned(ystart, 10);
+      yend_s      <= to_unsigned(ystart + lines - 1, 10);
       ystart2_s   <= to_unsigned(g.ystart30, 10);
       yend2_s     <= to_unsigned(g.ystart30 + 239, 10);
-      sl_reset1_s <= to_unsigned(g.ystart - 2, 10);
+      sl_reset1_s <= to_unsigned(ystart - 2, 10);
       if g.ystart30 >= 2 then
          sl_reset2_s <= to_unsigned(g.ystart30 - 2, 10);
       else
@@ -244,8 +255,9 @@ begin
 
    -- One raster line per VDP line.  The tiles and sprites prepare the next
    -- line during the current one: on the line before the area y_count is 1
-   -- and line 0 is prepared.
-   y_half <= resize(y_count - 1, 8);
+   -- and line 0 is prepared.  The V9938 vertical scroll (R23) moves the
+   -- whole picture, wrapping at 256 lines.
+   y_half <= resize(y_count - 1, 8) + vscroll;
    y_next <= '0' & y_half;
 
    -- Horizontal scan line output.

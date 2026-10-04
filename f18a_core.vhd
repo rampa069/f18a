@@ -128,6 +128,10 @@ architecture rtl of f18a_core is
    signal y_tick_s         : std_logic;
    signal y_max_s          : std_logic;
    signal frame_pal_s      : std_logic;
+   signal v38_lines212_s   : std_logic;                  -- V9938 display controls
+   signal v38_vscroll_s    : unsigned(0 to 7);
+   signal v38_hadj_s       : signed(0 to 3);
+   signal v38_vadj_s       : signed(0 to 3);
    signal v38_vr_s         : std_logic;                  -- V9938 S#2 VR / HR
    signal v38_hr_s         : std_logic;
 
@@ -315,6 +319,10 @@ begin
       blank          => sl_blank_s,
       vr             => v38_vr_s,
       hr             => v38_hr_s,
+      v38_lines212   => v38_lines212_s,
+      v38_vscroll    => v38_vscroll_s,
+      v38_hadj       => v38_hadj_s,
+      v38_vadj       => v38_vadj_s,
    -- VRAM Interface
       vdin           => cpu_dout_s,       -- In to CPU from *out* of VRAM
       vwe            => cpu_we_s,
@@ -394,6 +402,8 @@ begin
       vga_clk        => clk_pix_i,
       rst_n          => reset_n_r,
       pal            => pal_r,
+      hadj           => v38_hadj_s,
+      vadj           => v38_vadj_s,
       frame_pal      => frame_pal_s,
       hsync_n        => hsync_s,
       vsync_n        => vsync_s,
@@ -417,6 +427,8 @@ begin
       y_tick         => y_tick_s,
       y_max          => y_max_s,
       frame_pal      => frame_pal_s,
+      lines212       => v38_lines212_s,
+      vscroll        => v38_vscroll_s,
       sprt_yreal     => sprt_yreal_s,
       gmode          => gmode_s,
       row30          => row30_s,
@@ -450,6 +462,7 @@ begin
       pgba           => pgba_s,
       gmode          => gmode_s,
       row30          => row30_s,
+      v9938          => v9938_i,
       textfg         => textfg_s,
       textbg         => textbg_s,
    -- F18A specific
