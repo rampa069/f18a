@@ -44,6 +44,26 @@ Known deviations from the 9918A are listed in `KNOWN_BUGS` in
 `tests/test_render.py` with their beads issue; those tests are marked
 `expect_fail` until the bug is fixed.
 
+## V9938 reference model and openMSX oracle
+
+`v9938_model.py` is a functional V9938 model (all display modes, sprite
+modes 1 and 2, 192 / 212 lines, R#23, the CPU interface with R#14, 9Ah, 9Bh
+and the status registers) following openMSX.  It is checked against openMSX
+itself:
+
+```bash
+F18A_OPENMSX=1 ../.venv/bin/python -m pytest -v test_model_openmsx.py   # ~30 s
+```
+
+`openmsx_oracle.py` runs openMSX (free C-BIOS ROMs) headless in Docker with
+Xvfb on the host `F18A_OPENMSX_HOST` (default `rampa@ea5iue-laptop.local`,
+image built from `openmsx/Dockerfile` as `openmsx-headless`).  Display
+scenes are loaded through the Tcl debugger with the Z80 parked, and the raw
+double size screenshots are decoded back to VDP color codes; port sequences
+(`io_sequences.py`) are assembled into a Z80 program started from the
+H.TIMI hook, so reads and writes have their real side effects.
+`v9938_scenes.py` has the display scenes.
+
 ## Notes
 
 - Frames are the 15 kHz picture, one sample per pixel clock (half a VDP
