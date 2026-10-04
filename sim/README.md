@@ -13,7 +13,7 @@ make -C sim setup         # creates ../.venv with cocotb, pytest, numpy, pillow
 ## Running
 
 ```bash
-make -C sim test                        # everything (~13 min)
+make -C sim test                        # everything (~17 min)
 make -C sim test T=host_io              # one module: host_io, timing, render, video15k
 F18A_UPDATE_GOLDEN=1 make -C sim test   # regenerate sim/golden/*.png
 ```
@@ -32,7 +32,7 @@ Logs, results and captured frames go to `sim/sim_build/`
 | `tests/test_host_io.py` | VRAM read/write, auto-increment, read-ahead, control port latch |
 | `tests/test_timing.py` | VGA sync timing, active area, frame interrupt and status F flag |
 | `tests/test_render.py` | Renders each scene, compares against the model and the golden PNGs |
-| `tests/test_video15k.py` | 15 kHz output: sync timing, composite sync, interrupt rate, image vs. model |
+| `tests/test_video15k.py` | 15 kHz output, NTSC and PAL: sync timing, composite sync, interrupt rate, image vs. model |
 
 Each render test is checked twice: against the reference model (is the
 output a correct 9918A image?) and against `golden/<scene>.png` (did the

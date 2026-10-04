@@ -41,8 +41,9 @@
 -- is stored in a line buffer and played back at the 15KHz rate during the
 -- pair, so the rest of the core is unchanged.
 --
--- The VGA controller must be in 15KHz mode (timing_15k): 796 pixels per VGA
--- line and 524 lines per frame, giving 262 15KHz lines of 63.68us, 59.94Hz.
+-- The VGA controller must be in a 15KHz raster geometry (f18a_video_pkg):
+-- 796 pixels per raster line, so the 15KHz line is 63.68us, and 524 (NTSC)
+-- or 626 (PAL) raster lines, giving 262 or 313 15KHz lines.
 --
 -- The 15KHz line is divided in 342 9918A pixels (684 half pixels, one per
 -- stored VGA pixel), with the same layout as the 9918A:
@@ -54,9 +55,10 @@
 --    hsync         26 px
 --    blanking      24 px   (back porch, the 9918A color burst is here)
 --
--- Vertically: 24 border lines, 192 active lines, 24 border lines (the
--- visible VGA lines 0..479), then 22 blank lines with a 3 line vsync.
--- Text modes and the F18A 30-row mode use the same window.
+-- Vertically the raster lines with picture (border + active) are shown,
+-- then 3 blank lines, a 3 line vsync and blank lines up to the end of the
+-- frame (NTSC: 27 + 192 + 24 picture lines, PAL: 51 + 192 + 51).  Text modes
+-- and the F18A 30-row mode use the same window.
 --
 -- The output pixels are generated with a fractional step of the 100MHz clock
 -- (684 half pixels every 6368 clocks), so they are 9 or 10 clocks wide.
@@ -64,11 +66,13 @@
 library ieee;
 use ieee.std_logic_1164.all;
 use ieee.numeric_std.all;
+use work.f18a_video_pkg.all;
 
 entity f18a_video_15k is
    port (
       clk         : in  std_logic;              -- 100MHz
       vga_clk     : in  std_logic;              -- 25MHz, phase aligned
+      frame_pal   : in  std_logic;              -- PAL raster geometry in use
       raster_x    : in  unsigned(0 to 9);       -- VGA position, vga_clk domain
       raster_y    : in  unsigned(0 to 9);
       red_i       : in  std_logic_vector(0 to 3);  -- VGA pixel for raster_x/y
@@ -105,9 +109,9 @@ architecture rtl of f18a_video_15k is
    constant H_SYNC_OFF  : integer := 636;    -- + 26 * 2 sync
 
    -- Vertical layout in 15KHz lines.
-   constant V_VISIBLE   : integer := 240;
-   constant V_SYNC_ON   : integer := 243;
-   constant V_SYNC_OFF  : integer := 246;
+   signal v_visible_s   : unsigned(0 to 8);
+   signal v_sync_on_s   : unsigned(0 to 8);
+   signal v_sync_off_s  : unsigned(0 to 8);
 
    -- Line buffer, 12-bit RGB per VGA pixel.
    type ram_t is array (0 to 1023) of std_logic_vector(0 to 11);
@@ -137,6 +141,15 @@ architecture rtl of f18a_video_15k is
    signal blank_r       : std_logic := '1';
 
 begin
+
+   process (frame_pal)
+      variable lines : integer;
+   begin
+      lines := video_geom('1', frame_pal).vsize / 2;
+      v_visible_s  <= to_unsigned(lines, 9);
+      v_sync_on_s  <= to_unsigned(lines + V15_BLANK_BEFORE_SYNC, 9);
+      v_sync_off_s <= to_unsigned(lines + V15_BLANK_BEFORE_SYNC + V15_SYNC_LINES, 9);
+   end process;
 
    -- Capture the first VGA line of each pair (even raster_y).  The
    -- registered address and data stay valid for four 100MHz clocks.
@@ -191,7 +204,7 @@ begin
 
       -- Vertical sync starts and ends with the horizontal sync pulse.
       if hpos_r = H_SYNC_ON then
-         if line_r >= V_SYNC_ON and line_r < V_SYNC_OFF then
+         if line_r >= v_sync_on_s and line_r < v_sync_off_s then
             vsync_r <= '1';
          else
             vsync_r <= '0';
@@ -199,7 +212,7 @@ begin
       end if;
 
       -- Pipeline stage aligned with rd_data_r.
-      if hpos_r < H_VISIBLE and line_r < V_VISIBLE then
+      if hpos_r < H_VISIBLE and line_r < v_visible_s then
          visible_r <= '1';
       else
          visible_r <= '0';

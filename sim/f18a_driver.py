@@ -21,8 +21,11 @@ VGA_W, VGA_H = 640, 480
 ACTIVE_X, ACTIVE_Y = 65, 48
 # Text mode (240 pixels wide) is centered (XSTART2 = 80, plus the same delay).
 TEXT_X = 81
-# 15KHz output window: VGA pixels 39..606 of the even VGA lines 0..478.
-X15_FIRST, W15, H15 = 39, 568, 240
+# 15KHz output: VGA pixels 39..606 of each raster line pair, i.e. 13 border
+# pixels, 256 active and 15 border pixels as half pixels.
+X15_FIRST, W15 = 39, 568
+# 15KHz vertical layout: (top border, bottom border, total lines).
+GEOM15 = {"ntsc": (27, 24, 262), "pal": (51, 51, 313)}
 
 # Power-on version banner in the top-left corner of the border (raster
 # coordinates < XMAX/YMAX in f18a_version.vhd), shown for 384 frames.
@@ -43,10 +46,11 @@ class F18A:
     def __init__(self, dut):
         self.dut = dut
 
-    async def reset(self, sprite_max_4=True, scanlines=False, video_15k=False):
+    async def reset(self, sprite_max_4=True, scanlines=False, video_15k=False, pal=False):
         """Reset the core.  sprite_max_4 selects the real 9918A limit of
         four sprites per line (jumper USR1 off on the F18A board).
-        video_15k selects the 15KHz timing (applied from the next frame)."""
+        video_15k selects the 15KHz timing (applied from the next frame),
+        pal the PAL 15KHz geometry."""
         dut = self.dut
         dut.reset_n_i.value = 0
         dut.mode_i.value = 0
@@ -58,6 +62,7 @@ class F18A:
         dut.capture_en_i.value = 0
         dut.capture15_en_i.value = 0
         dut.video_15k_i.value = 1 if video_15k else 0
+        dut.pal_i.value = 1 if pal else 0
         await Timer(1, "us")
         dut.reset_n_i.value = 1
         await Timer(1, "us")
@@ -154,7 +159,7 @@ class F18A:
 
     async def capture_frame15(self):
         """Capture the next complete 15KHz frame, returned as an
-        (240, 568, 3) array of 4-bit RGB values."""
+        (lines, 568, 3) array of 4-bit RGB values."""
         dut = self.dut
         start = int(dut.frames15_o.value)
         dut.capture15_en_i.value = 1
@@ -171,6 +176,8 @@ def load_ppm(path):
     assert tokens[0] == "P3", f"{path}: not an ASCII PPM"
     w, h = int(tokens[1]), int(tokens[2])
     pixels = np.array(tokens[4:], dtype=np.uint8)
+    if h == 0:                          # height not known when the file was written
+        h = pixels.size // (w * 3)
     assert pixels.size == w * h * 3, f"{path}: {pixels.size // 3} pixels, expected {w * h}"
     return pixels.reshape(h, w, 3)
 

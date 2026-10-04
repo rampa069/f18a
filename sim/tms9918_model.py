@@ -8,7 +8,7 @@ modeled; F18A extensions are expected to be disabled (locked VDP).
 
 import numpy as np
 
-from f18a_driver import ACTIVE_X, ACTIVE_Y, TEXT_X, VGA_H, VGA_W
+from f18a_driver import ACTIVE_X, ACTIVE_Y, GEOM15, TEXT_X, VGA_H, VGA_W, W15, X15_FIRST
 
 # Default F18A palette 0 (f18a_color.vhd), 4-bit R, G, B.
 PALETTE = [
@@ -162,6 +162,35 @@ def render_sprites(vram, regs, max_per_line=4):
         # Without a 5th sprite the number field holds the last sprite processed.
         status.fifth_num = len(sprites) if len(sprites) < 32 else 31
     return out, status
+
+
+def render_vdp(vram, regs, max_per_line=4):
+    """Return (color index image, x offset in 2x pixels from ACTIVE_X, Status).
+    The image is 192 lines of 256 (or 240 in text mode) pixels with the
+    backdrop already applied, or None when the display is blanked."""
+    if not regs[1] & 0x40:              # BL = 0, display blanked
+        return None, 0, Status()
+    backdrop = regs[7] & 0x0F
+    tiles = render_tiles(vram, regs)
+    sprites, status = render_sprites(vram, regs, max_per_line)
+    if mode_of(regs) == MODE_TEXT:
+        img, x0 = tiles, TEXT_X - ACTIVE_X
+    else:
+        img, x0 = np.where(sprites != 0, sprites, tiles), 0
+    return np.where(img == 0, backdrop, img), x0, status
+
+
+def render_frame15(vram, regs, standard="ntsc", max_per_line=4):
+    """Render the visible part of a 15KHz frame: (top border + 192 + bottom
+    border) lines of 568 half pixels."""
+    top, bottom, _ = GEOM15[standard]
+    frame = np.empty((top + 192 + bottom, W15, 3), dtype=np.uint8)
+    frame[:, :] = PALETTE_RGB[regs[7] & 0x0F]
+    img, x0, status = render_vdp(bytes(vram), regs, max_per_line)
+    if img is not None:
+        x = ACTIVE_X - X15_FIRST + x0
+        frame[top: top + 192, x: x + img.shape[1] * 2] = PALETTE_RGB[np.repeat(img, 2, axis=1)]
+    return frame, status
 
 
 def render_frame(vram, regs, max_per_line=4):

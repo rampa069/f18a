@@ -83,7 +83,8 @@ entity f18a_core is
       blu_o                : out std_logic_vector(0 to 3);
 
       -- 15KHz RGB Video Output, valid when video_15k_i = '1'
-      video_15k_i          : in  std_logic;  -- '1' = 15KHz timing (VGA becomes 796x524, 59.94Hz)
+      video_15k_i          : in  std_logic;  -- '1' = 15KHz timing, the VGA output is then not valid
+      pal_i                : in  std_logic;  -- '1' = PAL (313 lines, 50Hz), '0' = NTSC (262 lines, 60Hz)
       red15_o              : out std_logic_vector(0 to 3);
       grn15_o              : out std_logic_vector(0 to 3);
       blu15_o              : out std_logic_vector(0 to 3);
@@ -125,6 +126,7 @@ architecture rtl of f18a_core is
    signal y_tick_s         : std_logic;
    signal y_max_s          : std_logic;
    signal frame_15k_s      : std_logic;
+   signal frame_pal_s      : std_logic;
 
    -- Counter signals
    signal in_margin_s      : std_logic;
@@ -246,6 +248,7 @@ architecture rtl of f18a_core is
    signal reset_n_r        : std_logic := '1';
    signal scanlines_r      : std_logic := '0';
    signal video_15k_r      : std_logic := '0';
+   signal pal_r            : std_logic := '0';
    signal sprite_max_r     : std_logic_vector(0 to 4) := "11111";
 
 begin
@@ -257,6 +260,7 @@ begin
       reset_n_r      <= reset_n_i;
       scanlines_r    <= scanlines_i;
       video_15k_r    <= video_15k_i;
+      pal_r          <= pal_i;
 
       -- Select the power-on / reset default maximum number of sprites per line.
       -- The max sprites can also be changed after power-on via a VDP register.
@@ -383,7 +387,9 @@ begin
       vga_clk        => clk_25m0_i,
       rst_n          => reset_n_r,
       timing_15k     => video_15k_r,
+      timing_pal     => pal_r,
       frame_15k      => frame_15k_s,
+      frame_pal      => frame_pal_s,
       hsync          => hsync_s,
       vsync          => vsync_s,
       raster_x       => raster_x_s,
@@ -405,6 +411,7 @@ begin
       y_tick         => y_tick_s,
       y_max          => y_max_s,
       timing_15k     => frame_15k_s,
+      timing_pal     => frame_pal_s,
       sprt_yreal     => sprt_yreal_s,
       gmode          => gmode_s,
       row30          => row30_s,
@@ -597,6 +604,7 @@ begin
    port map (
       clk            => clk_100m0_i,
       vga_clk        => clk_25m0_i,
+      frame_pal      => frame_pal_s,
       raster_x       => raster_x_s,
       raster_y       => raster_y_s,
       red_i          => red_s,

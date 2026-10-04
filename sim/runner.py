@@ -12,6 +12,7 @@ TOPLEVEL = "f18a_tb"
 
 # Analysis order matters: each unit after the ones it instantiates.
 RTL_SOURCES = [
+    "f18a_video_pkg.vhd",
     "f18a_version.vhd",
     "f18a_color.vhd",
     "f18a_counters.vhd",

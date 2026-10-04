@@ -9,6 +9,7 @@ set_global_assignment -name TOP_LEVEL_ENTITY f18a_top_altera
 set_global_assignment -name PROJECT_OUTPUT_DIRECTORY output_files
 set_global_assignment -name VHDL_INPUT_VERSION VHDL_2008
 
+set_global_assignment -name VHDL_FILE ../f18a_video_pkg.vhd
 set_global_assignment -name VHDL_FILE ../f18a_version.vhd
 set_global_assignment -name VHDL_FILE ../f18a_color.vhd
 set_global_assignment -name VHDL_FILE ../f18a_counters.vhd
@@ -38,7 +39,7 @@ set_instance_assignment -name WEAK_PULL_UP_RESISTOR ON -to usr1_net
 set_instance_assignment -name WEAK_PULL_UP_RESISTOR ON -to usr2_net
 set_instance_assignment -name WEAK_PULL_UP_RESISTOR ON -to usr3_net
 set_instance_assignment -name WEAK_PULL_UP_RESISTOR ON -to usr4_net
-set_instance_assignment -name WEAK_PULL_UP_RESISTOR ON -to video_15k_net
+set_instance_assignment -name WEAK_PULL_UP_RESISTOR ON -to pal_net
 
 set_global_assignment -name OPTIMIZATION_MODE "HIGH PERFORMANCE EFFORT"
 # The 100MHz paths from RAM outputs to the GPU have little margin (f18a-zus).

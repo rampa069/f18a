@@ -49,13 +49,16 @@
 library ieee;
 use ieee.std_logic_1164.all;
 use ieee.numeric_std.all;
+use work.f18a_video_pkg.all;
 
 entity f18a_vga_cont_640_60 is
    port(
       vga_clk  : in std_logic;
       rst_n    : in std_logic;
-      timing_15k : in std_logic;    -- '1' = 796x524 frame for the 15KHz output
-      frame_15k  : out std_logic;   -- frame size in use, changes at the end of a frame
+      timing_15k : in std_logic;    -- '1' = raster for the 15KHz output (f18a_video_pkg)
+      timing_pal : in std_logic;    -- '1' = PAL 15KHz raster, when timing_15k = '1'
+      frame_15k  : out std_logic;   -- timing in use, changes at the end of a frame
+      frame_pal  : out std_logic;
       hsync    : out std_logic;
       vsync    : out std_logic;
       raster_x : out unsigned(0 to 9);
@@ -86,18 +89,15 @@ architecture rtl of f18a_vga_cont_640_60 is
    constant HMAX  : integer := 793;    -- 0 to 799 == 800 pixels
    constant VMAX  : integer := 524;    -- 0 to 524 == 525 lines
 
-   -- 15KHz mode.  Every 15KHz line is two VGA lines, so the frame needs an
-   -- even number of lines: 524 VGA lines = 262 15KHz lines, like the 9918A.
-   -- The line is stretched to 796 pixels so the 15KHz line is 63.68us
-   -- (342 pixels of the 9918A 5.37MHz clock = 63.69us) and the frame rate is
-   -- 59.94Hz.
-   constant HMAX_15K : integer := 795;
-   constant VMAX_15K : integer := 523;
-
-   -- Frame size in use, only changed at the end of a frame.
-   signal hmax_r  : unsigned(0 to 9) := to_unsigned(HMAX, 10);
-   signal vmax_r  : unsigned(0 to 9) := to_unsigned(VMAX, 10);
+   -- Frame geometry in use (see f18a_video_pkg), only changed at the end
+   -- of a frame.  Initialized to VGA.
+   signal hmax_r  : unsigned(0 to 9) := to_unsigned(GEOM_VGA.hmax, 10);
+   signal vmax_r  : unsigned(0 to 9) := to_unsigned(GEOM_VGA.vmax, 10);
+   signal vsize_r : unsigned(0 to 9) := to_unsigned(GEOM_VGA.vsize, 10);
+   signal vfp_r   : unsigned(0 to 9) := to_unsigned(GEOM_VGA.vfp, 10);
+   signal vsp_r   : unsigned(0 to 9) := to_unsigned(GEOM_VGA.vsp, 10);
    signal frame_15k_r : std_logic := '0';
+   signal frame_pal_r : std_logic := '0';
 
    -- 640x480 display size.
    constant HSIZE : integer := 640;
@@ -158,13 +158,12 @@ begin
                vcounter <= (others => '0');
                -- Select the frame size for the next frame.
                frame_15k_r <= timing_15k;
-               if timing_15k = '1' then
-                  hmax_r <= to_unsigned(HMAX_15K, 10);
-                  vmax_r <= to_unsigned(VMAX_15K, 10);
-               else
-                  hmax_r <= to_unsigned(HMAX, 10);
-                  vmax_r <= to_unsigned(VMAX, 10);
-               end if;
+               frame_pal_r <= timing_15k and timing_pal;
+               hmax_r  <= to_unsigned(video_geom(timing_15k, timing_pal).hmax, 10);
+               vmax_r  <= to_unsigned(video_geom(timing_15k, timing_pal).vmax, 10);
+               vsize_r <= to_unsigned(video_geom(timing_15k, timing_pal).vsize, 10);
+               vfp_r   <= to_unsigned(video_geom(timing_15k, timing_pal).vfp, 10);
+               vsp_r   <= to_unsigned(video_geom(timing_15k, timing_pal).vsp, 10);
             else
                vcounter <= vcounter + 1;
             end if;
@@ -193,7 +192,7 @@ begin
    do_vs: process (vga_clk)
    begin
       if rising_edge(vga_clk) then
-         if vcounter >= VFP and vcounter < VSP then
+         if vcounter >= vfp_r and vcounter < vsp_r then
             vsync <= SPP;
          else
             vsync <= not SPP;
@@ -207,12 +206,13 @@ begin
 
    y_tick <= '1' when hcounter = hmax_r else '0';
    frame_15k <= frame_15k_r;
-   y_max <= '1' when vcounter = VSIZE else '0';
+   frame_pal <= frame_pal_r;
+   y_max <= '1' when vcounter = vsize_r else '0';
 
    -- Blank is active when the raster is outside visible screen area.
    -- Registered to prevent thin, top to bottom, vertical artifacts on the screen.
    process (vga_clk) begin if rising_edge(vga_clk) then
-      if (hcounter < HSIZE and vcounter < VSIZE) then
+      if (hcounter < HSIZE and vcounter < vsize_r) then
          blank_reg <= '0';
       else
          blank_reg <= '1';

@@ -63,11 +63,11 @@ entity f18a_top_altera is
       clk_cpu_net    : out std_logic;  -- 3.5795MHz CPUCLK
       cd_net         : inout std_logic_vector(0 to 7);
 
-      -- Video generation.  With video_15k_net = '0' (jumper fitted) the
-      -- outputs carry 15KHz RGB with separate hsync / vsync and a composite
-      -- sync on csync_net.  Otherwise they are 640x480 VGA (csync_net is
-      -- the VGA hsync and vsync combined).  All syncs are active low.
-      video_15k_net  : in  std_logic;
+      -- Video generation: 15KHz RGB like a real 9918A / 9929A, for boards
+      -- with their own scandoubler.  pal_net = '0' (jumper fitted) selects
+      -- PAL (313 lines, 50Hz), otherwise NTSC (262 lines, 60Hz).  Separate
+      -- and composite syncs, all active low.
+      pal_net        : in  std_logic;
       hsync_net      : out std_logic;
       vsync_net      : out std_logic;
       csync_net      : out std_logic;
@@ -121,9 +121,7 @@ architecture rtl of f18a_top_altera is
 
    -- Output routing.
    signal cd_out_s         : std_logic_vector(0 to 7);
-   signal video_15k_s      : std_logic;
-   signal hsync_s, vsync_s : std_logic;
-   signal red_s, grn_s, blu_s : std_logic_vector(0 to 3);
+   signal pal_s            : std_logic;
    signal hsync15_s, vsync15_s, csync15_s : std_logic;
    signal red15_s, grn15_s, blu15_s : std_logic_vector(0 to 3);
 
@@ -202,14 +200,15 @@ begin
 
       -- Video Output
       blank_o        => open,
-      hsync_o        => hsync_s,
-      vsync_o        => vsync_s,
-      red_o          => red_s,
-      grn_o          => grn_s,
-      blu_o          => blu_s,
+      hsync_o        => open,
+      vsync_o        => open,
+      red_o          => open,
+      grn_o          => open,
+      blu_o          => open,
 
       -- 15KHz Video Output
-      video_15k_i    => video_15k_s,
+      video_15k_i    => '1',
+      pal_i          => pal_s,
       red15_o        => red15_s,
       grn15_o        => grn15_s,
       blu15_o        => blu15_s,
@@ -230,27 +229,15 @@ begin
    );
 
 
-   -- Video output selection.  The jumper is read by the core at the end of
-   -- each frame; the outputs follow the selected timing.
-   video_15k_s <= not video_15k_net;
+   -- PAL / NTSC jumper, read by the core at the end of each frame.
+   pal_s <= not pal_net;
 
-   process (clk_100m0_s) begin if rising_edge(clk_100m0_s) then
-      if video_15k_s = '1' then
-         hsync_net <= hsync15_s;
-         vsync_net <= vsync15_s;
-         csync_net <= csync15_s;
-         red_net   <= red15_s;
-         grn_net   <= grn15_s;
-         blu_net   <= blu15_s;
-      else
-         hsync_net <= hsync_s;
-         vsync_net <= vsync_s;
-         csync_net <= hsync_s and vsync_s;
-         red_net   <= red_s;
-         grn_net   <= grn_s;
-         blu_net   <= blu_s;
-      end if;
-   end if; end process;
+   hsync_net <= hsync15_s;
+   vsync_net <= vsync15_s;
+   csync_net <= csync15_s;
+   red_net   <= red15_s;
+   grn_net   <= grn15_s;
+   blu_net   <= blu15_s;
 
 
    -- Host interface data bus tristate.

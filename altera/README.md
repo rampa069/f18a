@@ -6,7 +6,7 @@ original Xilinx Spartan-3E board.
 
 | File | Purpose |
 |---|---|
-| `f18a_top_altera.vhd` | Top level: PLL, power-on reset, host bus tristate, CPUCLK/GROMCLK outputs, VGA / 15 kHz output selection |
+| `f18a_top_altera.vhd` | Top level: PLL, power-on reset, host bus tristate, CPUCLK/GROMCLK outputs, 15 kHz video with PAL/NTSC selection |
 | `f18a_pll.v` | altpll: 50 MHz in, 100 MHz + 25 MHz (phase aligned) out |
 | `f18a.qpf`, `f18a.qsf` | Project, sources, device, I/O defaults |
 | `f18a.sdc` | Clocks and false paths for the asynchronous host bus and video outputs |
@@ -35,14 +35,19 @@ quartus_sh --flow compile f18a
 
 ## Video output
 
-`video_15k_net` (weak pull-up, jumper to ground) selects the video output:
+The board outputs 15 kHz RGB like a real 9918A (NTSC) / 9929A (PAL), meant
+for boards with their own scandoubler.  `pal_net` (weak pull-up, jumper to
+ground) selects the standard; it takes effect at the next frame.
 
-| Jumper | Output |
-|---|---|
-| off | 640x480 VGA, 59.97 Hz: `hsync_net`, `vsync_net`, 4-bit RGB (`csync_net` = hsync AND vsync) |
-| on | 15.7 kHz RGB, 262 lines, 59.94 Hz, like a real 9918A: `hsync_net`, `vsync_net`, `csync_net` (composite), 4-bit RGB |
+| `pal_net` | Standard | Lines | Borders top / bottom | Frame rate |
+|---|---|---|---|---|
+| open | NTSC | 262 | 27 / 24 | 59.94 Hz |
+| jumper | PAL | 313 | 51 / 51 | 50.17 Hz |
 
-All syncs are active low.  The selection takes effect at the next frame.
+Lines are 63.68 us (15.70 kHz) with 13 + 256 + 15 visible pixels.  Outputs:
+4-bit RGB, `hsync_net`, `vsync_net` and composite `csync_net`, all syncs
+active low.  The core also keeps the original 640x480 VGA output
+(`video_15k_i = '0'`), not used by this top level.
 
 ## Notes
 

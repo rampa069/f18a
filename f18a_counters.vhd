@@ -52,6 +52,7 @@ library ieee;
 use ieee.std_logic_1164.all;
 use ieee.numeric_std.all;
 use ieee.std_logic_unsigned.all;
+use work.f18a_video_pkg.all;
 
 
 entity f18a_counters is
@@ -63,7 +64,8 @@ entity f18a_counters is
       raster_y       : in unsigned(0 to 9);
       y_tick         : in std_logic;
       y_max          : in std_logic;
-      timing_15k     : in std_logic;    -- '1' when the VGA frame is 524 lines (frame_15k)
+      timing_15k     : in std_logic;            -- raster geometry in use (frame_15k)
+      timing_pal     : in std_logic;            -- (frame_pal), see f18a_video_pkg
       sprt_yreal     : in std_logic;            -- 1 to use real sprite location, 0 for original off-by-one
       gmode          : in unsigned(0 to 3);
       row30          : in std_logic;            -- 1 when 30 rows
@@ -98,13 +100,14 @@ architecture rtl of f18a_counters is
 
    -- 32/40 x 24 tiles = 256/240 x 192 2x-pixels = 512 x 384 1x-pixels
    -- 0 to 47 (top 48px margin), 48 to 431 (384px), 432 to 479 (bottom 48px margin)
+   -- VGA values shown; the vertical positions depend on the raster
+   -- geometry in use, see f18a_video_pkg and the geometry signals below.
    constant YPRESCAN : integer := 47;
    constant YSTART   : integer := 48;
    constant YEND     : integer := 431;
 
    constant SL_RESET1: integer := 46;
    constant SL_RESET2: integer := 523;
-   constant SL_RESET2_15K: integer := 522;   -- 2 rasters before line 0 of a 524 line frame
 
    -- 32 x 30 tiles = 256 x 240 2x-pixels = 512 x 480 1x-pixels
    -- No top or bottom margin
@@ -112,6 +115,14 @@ architecture rtl of f18a_counters is
    constant YPRESCAN2: integer := 524;
    constant YSTART2  : integer := 0;
    constant YEND2    : integer := 479;
+
+   -- Vertical positions for the raster geometry in use.
+   signal ystart_s   : unsigned(0 to 9);  -- 192/212 line area
+   signal yend_s     : unsigned(0 to 9);
+   signal ystart2_s  : unsigned(0 to 9);  -- 240 line (30 row) area
+   signal yend2_s    : unsigned(0 to 9);
+   signal sl_reset1_s: unsigned(0 to 9);  -- 2 rasters before each area
+   signal sl_reset2_s: unsigned(0 to 9);
 
    -- Margin indicators
    signal xmargin    : std_logic;
@@ -227,14 +238,32 @@ begin
    end process;
 
    -- Divide the 1x line by 2 to make a 2x line.
+   -- Vertical geometry.  Each area starts 2 rasters after its scan line
+   -- reset; the 30 row area may start on raster 0, then the reset is on the
+   -- second to last raster of the previous frame.
+   process (timing_15k, timing_pal)
+      variable g : video_geom_t;
+   begin
+      g := video_geom(timing_15k, timing_pal);
+      ystart_s    <= to_unsigned(g.ystart, 10);
+      yend_s      <= to_unsigned(g.ystart + 383, 10);
+      ystart2_s   <= to_unsigned(g.ystart30, 10);
+      yend2_s     <= to_unsigned(g.ystart30 + 479, 10);
+      sl_reset1_s <= to_unsigned(g.ystart - 2, 10);
+      if g.ystart30 >= 2 then
+         sl_reset2_s <= to_unsigned(g.ystart30 - 2, 10);
+      else
+         sl_reset2_s <= to_unsigned(g.vmax + g.ystart30 - 1, 10);
+      end if;
+   end process;
+
    y_half <= y_count(0 to 7);
    y_next <= '0' & y_half when gmode < 10 else y_count;
 
    -- Horizontal scan line output.
    scanline_reset <= '1' when
-      (raster_y = SL_RESET1 and row30reg = '0') or
-      (raster_y = SL_RESET2 and row30reg = '1' and timing_15k = '0') or
-      (raster_y = SL_RESET2_15K and row30reg = '1' and timing_15k = '1') else '0';
+      (raster_y = sl_reset1_s and row30reg = '0') or
+      (raster_y = sl_reset2_s and row30reg = '1') else '0';
 
    process (vga_clk) begin if rising_edge(vga_clk) then
       if raster_x = 1 then
@@ -263,7 +292,7 @@ begin
    -- same as the blanking area, which is controlled by the VGA controller.
    -- Mux the consistent data and slow changing data first, then feed
    -- the comparators below.
-   process (gmode, row30reg) begin
+   process (gmode, row30reg, ystart_s, yend_s, ystart2_s, yend2_s) begin
       if gmode = 1 or gmode = 9 then
          xstart_mux <= to_unsigned(XSTART2, 10);
          xend_mux <= to_unsigned(XEND2, 10);
@@ -273,11 +302,11 @@ begin
       end if;
 
       if row30reg = '0' then
-         ystart_mux <= to_unsigned(YSTART, 10);
-         yend_mux <= to_unsigned(YEND, 10);
+         ystart_mux <= ystart_s;
+         yend_mux <= yend_s;
       else
-         ystart_mux <= to_unsigned(YSTART2, 10);
-         yend_mux <= to_unsigned(YEND2, 10);
+         ystart_mux <= ystart2_s;
+         yend_mux <= yend2_s;
       end if;
    end process;
 
@@ -303,8 +332,8 @@ begin
    -- The VDP interrupt does NOT happen at vsync, it happens after the last
    -- line of the active display area.
    valid_y <= '1' when
-      (raster_y = (YEND  + 1) and row30reg = '0') or
-      (raster_y = (YEND2 + 1) and row30reg = '1')
+      (raster_y = yend_s + 1 and row30reg = '0') or
+      (raster_y = yend2_s + 1 and row30reg = '1')
       else '0';
 
    -- Interrupt edge detector for one clock tick.

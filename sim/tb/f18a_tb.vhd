@@ -40,6 +40,7 @@ entity f18a_tb is
 
       -- 15KHz video.
       video_15k_i    : in  std_logic;
+      pal_i          : in  std_logic;
       red15_o        : out std_logic_vector(0 to 3);
       grn15_o        : out std_logic_vector(0 to 3);
       blu15_o        : out std_logic_vector(0 to 3);
@@ -115,6 +116,7 @@ begin
       sprite_max_i   => sprite_max_i,
       scanlines_i    => scanlines_i,
       video_15k_i    => video_15k_i,
+      pal_i          => pal_i,
       red15_o        => red15_s,
       grn15_o        => grn15_s,
       blu15_o        => blu15_s,
@@ -200,7 +202,9 @@ begin
 
 
 
-   -- 15KHz frame capture: one sample per half pixel (568 x 240 visible).
+   -- 15KHz frame capture: one sample per half pixel, 568 per line.  The
+   -- number of lines depends on NTSC / PAL, so the PPM height is written as
+   -- 0 and the reader derives it from the pixel count.
    -- The output pixel for a new half pixel position is stable two clocks
    -- after the position counter in f18a_video_15k changes; sample it one
    -- clock later.
@@ -231,7 +235,7 @@ begin
                file_open(f, CAPTURE_DIR & "/frame15_" & integer'image(frames15) & ".ppm", write_mode);
                write(l, string'("P3"));
                writeline(f, l);
-               write(l, string'("568 240"));
+               write(l, string'("568 0"));
                writeline(f, l);
                write(l, string'("15"));
                writeline(f, l);
