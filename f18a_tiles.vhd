@@ -104,6 +104,11 @@ entity f18a_tiles is
       bml_pri        : in  std_logic;                 -- '1' when bitmap has priority over tiles
       bml_trans      : in  std_logic;                 -- '1' to set "00" pixels transparent
       bml_fat_i      : in  std_logic;                 -- '1' to set BML fat-pixel mode
+   -- V9938 T2 blink: characters with their bit set in the blink table
+   -- (R#3 / R#10) use the R#12 colors while blink_on = '1'.
+      blink_on       : in  std_logic := '0';
+      blink_fg       : in  std_logic_vector(0 to 3) := "0000";
+      blink_bg       : in  std_logic_vector(0 to 3) := "0000";
    -- VRAM Interface
       vdin           : in  std_logic_vector(0 to 7);
       vaddr          : out std_logic_vector(0 to 16);
@@ -212,6 +217,9 @@ architecture rtl of f18a_tiles is
    signal trans_r, trans_x          : std_logic;   -- If a pixel is transparent
    signal pal_sel_r, pal_sel_x      : std_logic_vector(0 to 3);   -- Palette select from tile attribute table
    signal attr_r, attr_x            : std_logic_vector(0 to 7);   -- Tile attribute values
+   signal blink_pos_s   : unsigned(0 to 13);                 -- V9938 T2: character position
+   signal blink_bit_r   : unsigned(0 to 2) := "000";         -- its bit in the blink byte
+   signal blink_r, blink_x : std_logic := '0';               -- '1': the character blinks
    signal t1ps_r, t2ps_r            : std_logic_vector(0 to 1);   -- Tile layer 1 and 2 palette select from VR24
 
    signal tile_en_r     : std_logic;                  -- '1' when tile layer 1 is enabled (visible)
@@ -606,12 +614,23 @@ begin
       ntba_s(0 to 1) & vto_r(0) & hto_r(0) & vto_r(1 to 5) & hto_r(1 to 5);   -- gm1, gm2, mcm
 
    -- Modify the attribute address based on tile name vs tile position.
-   process (pos_attr_i, textmode_r, vdin, textattr_r, vto_r, hto_r, vto_r, hto_r, ctba_s)
+   -- V9938 T2: the position (row * 80 + column) from the attribute
+   -- counter, which starts at CTBA * 64.
+   blink_pos_s <= unsigned(textattr_r) - (unsigned(ctba_s) & "000000");
+
+   process (pos_attr_i, textmode_r, vdin, textattr_r, vto_r, hto_r, vto_r, hto_r, ctba_s,
+   v9938, blink_pos_s)
    begin
 --    attr_name_vs_pos_s <= ("000000" & name_r);
       attr_name_vs_pos_s <= (ctba_s & "000000") + ("000000" & vdin);
 
-      if pos_attr_i = '1' then
+      if v9938 = '1' and textmode_r = '1' then
+         -- V9938 T2 blink byte: ((R#3 << 6) | 3Fh) & (position / 8), a
+         -- 512 byte table (openMSX colorTable mask ~0 << 9).
+         attr_name_vs_pos_s <= ctba_s(0 to 4) &
+            (ctba_s(5 to 7) and std_logic_vector(blink_pos_s(2 to 4))) &
+            std_logic_vector(blink_pos_s(5 to 10));
+      elsif pos_attr_i = '1' then
          if textmode_r = '1' then
             -- text1, text2
             -- textattr_r has the CTBA already added in.
@@ -631,6 +650,7 @@ begin
    process (clk) begin if rising_edge(clk) then
       --attr_addr_r <= (ctba_s & "000000") + attr_name_vs_pos_s;
       attr_addr_r <= attr_name_vs_pos_s;
+      blink_bit_r <= blink_pos_s(11 to 13);
    end if; end process;
 
    ptrn_addr_s <=
@@ -977,7 +997,8 @@ begin
    vpo_r, flip_x_r, y_pix_row_r, trans_r, pal_sel_r, attr_r,
    ptrn1_r, ptrn2_r, ptrn3_r, colr_fg_r, colr_bg_r,
    mcm_fg_r, mcm_bg_r, sprite_en_r, trig_tile_s,
-   vdin, vdin_s, textmode_r, ecm, pos_attr_i, gmode_r, textfg, textbg, t2_pri_en)
+   vdin, vdin_s, textmode_r, ecm, pos_attr_i, gmode_r, textfg, textbg, t2_pri_en,
+   blink_r, blink_bit_r, blink_on, blink_fg, blink_bg)
    begin
 
       -- Register defaults, stay the same unless it is changed.
@@ -996,6 +1017,7 @@ begin
       colr_bg_x      <= colr_bg_r;
       mcm_fg_x       <= mcm_fg_r;
       mcm_bg_x       <= mcm_bg_r;
+      blink_x        <= blink_r;
 
       -- Combinatorial defaults
       flip_x_sel <= '0';
@@ -1040,6 +1062,7 @@ begin
          -- updated, i.e. once tile expansion is complete.
          -- | PRI | FLIP X | FLIP Y | TRANS | PS0 .. PS3 |
          attr_x <= vdin;
+         blink_x <= vdin(to_integer(blink_bit_r));
 
          if ecm > 0 then                  -- Only use attribute byte in ECMs.
             flip_x_x <= vdin(1);          -- '1' to flip the X.
@@ -1096,7 +1119,15 @@ begin
          if textmode_r = '1' and ecm = 0 then
             -- If position-based attributes are off in T40/T80 ECM0, use
             -- the default fg/bg colors.
-            if pos_attr_i = '0' then
+            if blink_on = '1' and blink_r = '1' then
+               -- V9938 T2 blink colors; foreground 0 is the blink background.
+               if blink_fg = "0000" then
+                  colr_fg_x <= blink_bg;
+               else
+                  colr_fg_x <= blink_fg;
+               end if;
+               colr_bg_x <= blink_bg;
+            elsif pos_attr_i = '0' then
                colr_fg_x <= textfg;
                colr_bg_x <= textbg;
             else
@@ -1166,6 +1197,7 @@ begin
          colr_bg_r      <= colr_bg_x;
          mcm_fg_r       <= mcm_fg_x;
          mcm_bg_r       <= mcm_bg_x;
+         blink_r        <= blink_x;
       end if;
    end if;
    end process;

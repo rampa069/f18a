@@ -83,6 +83,9 @@ class V9938:
         self.latch = None                   # first control byte
         self.palette_latch = None
         self.palette_written = set()        # entries written through port 9Ah
+        self.blink_state = False            # T2 blink: True = R#12 colors
+        if self.regs[13] & 0xF0:
+            self.blink_state = True         # as if R#13 was written
         self.read_ahead = 0
         self.v9958 = False                  # R#25 CMD bit: commands in non-bitmap modes
         # Command engine, loaded with R#32-R#45 (R#46 = 0: no command).
@@ -214,6 +217,11 @@ class V9938:
             self.regs[reg] = value & 0xFF
         if reg == 16:
             self.palette_latch = None
+        if reg == 13:
+            # openMSX VDP::changeRegister: switch to the on state unless the
+            # on period is 0 (the per frame alternation is not modelled).
+            if self.blink_state == ((value & 0xF0) == 0):
+                self.blink_state = not self.blink_state
         if reg in (0, 1, 25):
             self.cmd.mode_changed()
             self._cmd_regs()
@@ -280,13 +288,25 @@ class V9938:
             return out
         if mode == T2:
             fg, tbg = self.regs[7] >> 4, self.regs[7] & 0x0F
+            # Blink (openMSX CharacterConverter::renderText2): characters
+            # with their bit set in the color table use R#12 while the
+            # blink state is on; those colors are never transparent.
+            bfg, bbg = self.regs[12] >> 4, self.regs[12] & 0x0F
+            if bfg == 0:
+                bfg = bbg
+            cbase = (self.regs[10] << 14) | (self.regs[3] << 6) | 0x3F
             for col in range(80):
                 name = self.vram_read(masked(self.name_base(), (y // 8) * 80 + col, 12))
                 bits = self.vram_read(masked(self.pattern_base(), name * 8 + (y & 7), 11))
+                attr = self.vram_read(masked(cbase, (y // 8) * 10 + col // 8, 9))
+                blink = self.blink_state and attr & (0x80 >> (col & 7))
                 for px in range(6):
-                    c = fg if bits & (0x80 >> px) else tbg
-                    if c == 0 and tp:
-                        c = bg
+                    if blink:
+                        c = bfg if bits & (0x80 >> px) else bbg
+                    else:
+                        c = fg if bits & (0x80 >> px) else tbg
+                        if c == 0 and tp:
+                            c = bg
                     out[2 * TEXT_OFFSET_V9938 + col * 6 + px] = c
             return out
 

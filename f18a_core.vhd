@@ -138,6 +138,8 @@ architecture rtl of f18a_core is
    signal v38_bmp_s        : std_logic;                  -- V9938 bitmap modes
    signal v38_bmode_s      : std_logic_vector(0 to 1);
    signal v38_r2_s, v38_r7_s : std_logic_vector(0 to 7);
+   signal v38_blink_s      : std_logic;
+   signal v38_r12_s        : std_logic_vector(0 to 7);
    signal v38_g5_s         : std_logic;
    signal v38_g7_s         : std_logic;
    signal half_r           : std_logic := '0';           -- half pixel parity, aligned with x_pixel_pos
@@ -343,6 +345,8 @@ begin
       v38_bmode      => v38_bmode_s,
       v38_r2         => v38_r2_s,
       v38_r7         => v38_r7_s,
+      v38_blink      => v38_blink_s,
+      v38_r12        => v38_r12_s,
    -- VRAM Interface
       vdin           => cpu_dout_s,       -- In to CPU from *out* of VRAM
       vwe            => cpu_we_s,
@@ -524,6 +528,9 @@ begin
       bml_pri        => bml_pri_s,
       bml_trans      => bml_trans_s,
       bml_fat_i      => bml_fat_s,
+      blink_on       => v38_blink_s,
+      blink_fg       => v38_r12_s(0 to 3),
+      blink_bg       => v38_r12_s(4 to 7),
    -- VRAM Interface
       tile_active    => tile_active_s,    -- 1 when tiles are active, otherwise 0
       vdin           => tile_dout_s,      -- In to Tile from *out* of VRAM

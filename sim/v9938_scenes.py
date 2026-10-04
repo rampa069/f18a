@@ -89,6 +89,14 @@ def page1(sc):
     return vram, regs, pal
 
 
+def t2_blink(sc, r12, r13):
+    """T2 with the blink color table at 0x0A00 and R#12 / R#13 (R#13 with
+    an off time of 0 keeps the blink state fixed)."""
+    vram, regs, pal = sc
+    regs[3], regs[10], regs[12], regs[13] = 0x2F, 0, r12, r13
+    return vram, regs, pal
+
+
 def default_palette(sc):
     """Leave the palette as it is after a reset (the V9938 one)."""
     vram, regs, _ = sc
@@ -103,6 +111,10 @@ DISPLAY_SCENES = {
     "g2_scroll": lambda: scene("G2", 23, scroll=200),
     "mc_212_scroll": lambda: scene("MC", 24, lines212=True, scroll=9),
     "t1": lambda: scene("T1", 4),
+    "t2_212": lambda: scene("T2", 5, lines212=True),
+    "t2_blink_on": lambda: t2_blink(scene("T2", 31), 0x4E, 0xF0),
+    "t2_blink_fg0": lambda: t2_blink(scene("T2", 32, lines212=True), 0x0B, 0x30),
+    "t2_blink_off": lambda: t2_blink(scene("T2", 33), 0x4E, 0x0F),
     "g3": lambda: scene("G3", 6),
     "g3_212_scroll": lambda: scene("G3", 7, lines212=True, scroll=37),
     "g3_mag": lambda: scene("G3", 25, mag=True),
@@ -125,6 +137,9 @@ SCENES = {
     "mc": lambda: scene("MC", 3),
     "t1": lambda: scene("T1", 4),
     "t2_212": lambda: scene("T2", 5, lines212=True),
+    "t2_blink_on": lambda: t2_blink(scene("T2", 31), 0x4E, 0xF0),
+    "t2_blink_fg0": lambda: t2_blink(scene("T2", 32, lines212=True), 0x0B, 0x30),
+    "t2_blink_off": lambda: t2_blink(scene("T2", 33), 0x4E, 0x0F),
     "g3": lambda: scene("G3", 6),
     "g3_212_scroll": lambda: scene("G3", 7, lines212=True, scroll=37),
     "g4_212": lambda: scene("G4", 8, lines212=True),

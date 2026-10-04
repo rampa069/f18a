@@ -89,6 +89,8 @@ entity f18a_cpu is
       v38_bmode   : out std_logic_vector(0 to 1);     -- "00" G4, "01" G5, "10" G6, "11" G7
       v38_r2      : out std_logic_vector(0 to 7);
       v38_r7      : out std_logic_vector(0 to 7);
+      v38_blink   : out std_logic;                    -- V9938 T2: blink state on (R#12 colors)
+      v38_r12     : out std_logic_vector(0 to 7);
    -- VRAM Interface
       vdin        : in  std_logic_vector(0 to 7);
       vwe         : out std_logic;
@@ -280,6 +282,10 @@ architecture rtl of f18a_cpu is
       x"000", x"000", x"2D2", x"6F6", x"22F", x"46F", x"B22", x"4DF",
       x"F22", x"F66", x"DD2", x"DD9", x"292", x"D4B", x"BBB", x"FFF");
    signal v38_pinit     : unsigned(0 to 4) := "10000";  -- entry being loaded, bit 0 = done
+   signal v38_r13_wr    : std_logic := '0';             -- R#13 written (value in v38_r13_val)
+   signal v38_r13_val   : std_logic_vector(0 to 7);
+   signal v38_blink_r   : std_logic := '0';
+   signal v38_blink_cnt : unsigned(0 to 7) := (others => '0');
 
    -- V9938 command engine.
    signal cmd_reg_we    : std_logic := '0';           -- R#32-R#46 written
@@ -1422,9 +1428,11 @@ begin
          v38_reg <= (others => (others => '0'));
          v38_r16_wr <= '0';
          cmd_reg_we <= '0';
+         v38_r13_wr <= '0';
       elsif v9938 = '1' then
          v38_r16_wr <= '0';
          cmd_reg_we <= '0';
+         v38_r13_wr <= '0';
 
          if io_state = st_reg_write then
             -- Direct write: register number and data in the address counter.
@@ -1433,6 +1441,7 @@ begin
                v38_reg(reg) <= ramaddr(6 to 13);
             end if;
             if reg = 16 then v38_r16_wr <= '1'; end if;
+            if reg = 13 then v38_r13_wr <= '1'; v38_r13_val <= ramaddr(6 to 13); end if;
             if reg >= 32 and reg <= 46 then
                cmd_reg_we  <= '1';
                cmd_reg_idx <= to_unsigned(reg - 32, 4);
@@ -1446,6 +1455,7 @@ begin
                v38_reg(reg) <= cd_in;
             end if;
             if reg = 16 then v38_r16_wr <= '1'; end if;
+            if reg = 13 then v38_r13_wr <= '1'; v38_r13_val <= cd_in; end if;
             if reg >= 32 and reg <= 46 then
                cmd_reg_we  <= '1';
                cmd_reg_idx <= to_unsigned(reg - 32, 4);
@@ -1497,6 +1507,42 @@ begin
       mem_rvalid  => cmd_rvalid,
       mem_din     => vdin
    );
+
+   -- V9938 T2 blink (openMSX VDP::frameStart / changeRegister): writing
+   -- R#13 switches to the on state unless the on time is 0 and starts the
+   -- count when both times are set; every frame the count goes down, and at
+   -- 0 the state toggles and the count reloads with the on (R#13 bits 7-4)
+   -- or off (bits 3-0) time, in units of 10 frames.
+   process (clk) begin if rising_edge(clk) then
+      if rst_n = '0' then
+         v38_blink_r   <= '0';
+         v38_blink_cnt <= (others => '0');
+      elsif v38_r13_wr = '1' then
+         if v38_r13_val(0 to 3) /= "0000" then
+            v38_blink_r <= '1';
+         else
+            v38_blink_r <= '0';
+         end if;
+         if v38_r13_val(0 to 3) /= "0000" and v38_r13_val(4 to 7) /= "0000" then
+            v38_blink_cnt <= unsigned(v38_r13_val(0 to 3)) * to_unsigned(10, 4);
+         else
+            v38_blink_cnt <= (others => '0');
+         end if;
+      elsif intr_en = '1' and v38_blink_cnt /= 0 then
+         v38_blink_cnt <= v38_blink_cnt - 1;
+         if v38_blink_cnt = 1 then
+            v38_blink_r <= not v38_blink_r;
+            if v38_blink_r = '1' then      -- to off
+               v38_blink_cnt <= unsigned(v38_reg(13)(4 to 7)) * to_unsigned(10, 4);
+            else
+               v38_blink_cnt <= unsigned(v38_reg(13)(0 to 3)) * to_unsigned(10, 4);
+            end if;
+         end if;
+      end if;
+   end if; end process;
+
+   v38_blink <= v9938 and v38_blink_r and v38_m(4) and v38_reg(0)(5);   -- T2 (M1, M4)
+   v38_r12   <= v38_reg(12);
 
    -- Host system data output.
    cd_o <= cd_out;
