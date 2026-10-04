@@ -22,9 +22,10 @@ PIX_NS = 8 * 2 * 5.820
 
 # Picture window: raster pixels 39..606 (f18a_video_pkg).  The VDP area
 # starts at raster_x 64 (XSTART), shown one pixel later by the output
-# pipeline: picture x = 26 (13 VDP border pixels).  Text mode starts at 80.
+# pipeline: picture x = 26 (13 VDP border pixels).  The 9918A text mode
+# starts 6 pixels in, at raster_x 76.
 X15_FIRST, W15 = 39, 568
-ACTIVE_X, TEXT_X = 65, 81
+ACTIVE_X, TEXT_X = 65, 77
 # Vertical layout per standard: (top border, bottom border, total lines).
 GEOM15 = {"ntsc": (27, 24, 262), "pal": (51, 51, 313)}
 

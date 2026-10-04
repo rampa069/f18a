@@ -67,6 +67,7 @@ entity f18a_counters is
       frame_pal      : in std_logic;            -- PAL geometry in use, see f18a_video_pkg
       lines212       : in std_logic;            -- V9938 R9 LN: 212 active lines
       vscroll        : in unsigned(0 to 7);     -- V9938 R23 vertical scroll (0 for a 9918A)
+      v9938          : in std_logic;            -- V9938 mode: text starts 9 pixels in, not 6
       sprt_yreal     : in std_logic;            -- 1 to use real sprite location, 0 for original off-by-one
       gmode          : in unsigned(0 to 3);
       row30          : in std_logic;            -- 1 when 30 rows
@@ -94,9 +95,15 @@ architecture rtl of f18a_counters is
 
    -- 64 to 575 (256 VDP pixels), text mode 80 to 559 (240 VDP pixels)
    constant XSTART   : integer := 64;     -- X start
-   constant XSTART2  : integer := 80;     -- X start for text mode
+   -- The text modes (240 pixels) start 6 pixels into the 256 pixel area on
+   -- the 9918A and 9 on the V9938 (openMSX VDP::getLeftSprites).  The
+   -- original F18A used 8.
+   constant XSTART2  : integer := 76;     -- X start for text mode (9918A)
+   constant XSTART2V : integer := 82;     -- X start for text mode (V9938)
    constant XEND     : integer := 575;    -- X end
-   constant XEND2    : integer := 559;    -- X end for text mode
+   constant XEND2    : integer := 555;    -- X end for text mode (9918A)
+   constant XEND2V   : integer := 561;    -- X end for text mode (V9938)
+   signal xstart2_s  : unsigned(0 to 9);
 
    -- 32/40 x 24 tiles = 256/240 x 192 VDP pixels = 512/480 x 192 raster pixels
    -- 0 to 47 (top 48px margin), 48 to 431 (384px), 432 to 479 (bottom 48px margin)
@@ -176,7 +183,8 @@ begin
    -- causes a thin line of the last pixel color to appear on the left
    -- edge of the margin-to-active area boundary.
    x512 <= raster_x - XSTART;
-   x480 <= raster_x - XSTART2;
+   xstart2_s <= to_unsigned(XSTART2V, 10) when v9938 = '1' else to_unsigned(XSTART2, 10);
+   x480 <= raster_x - xstart2_s;
    x256 <= x512(1 to 8);
    x240 <= x480(1 to 8);
    x_pixel_max <=
@@ -292,10 +300,15 @@ begin
    -- same as the blanking area, which is controlled by the VGA controller.
    -- Mux the consistent data and slow changing data first, then feed
    -- the comparators below.
-   process (gmode, row30reg, ystart_s, yend_s, ystart2_s, yend2_s) begin
+   process (gmode, row30reg, ystart_s, yend_s, ystart2_s, yend2_s, v9938) begin
       if gmode = 1 or gmode = 9 then
-         xstart_mux <= to_unsigned(XSTART2, 10);
-         xend_mux <= to_unsigned(XEND2, 10);
+         if v9938 = '1' then
+            xstart_mux <= to_unsigned(XSTART2V, 10);
+            xend_mux <= to_unsigned(XEND2V, 10);
+         else
+            xstart_mux <= to_unsigned(XSTART2, 10);
+            xend_mux <= to_unsigned(XEND2, 10);
+         end if;
       else
          xstart_mux <= to_unsigned(XSTART, 10);
          xend_mux <= to_unsigned(XEND, 10);

@@ -447,6 +447,7 @@ begin
       frame_pal      => frame_pal_s,
       lines212       => v38_lines212_s,
       vscroll        => v38_vscroll_s,
+      v9938          => v9938_i,
       sprt_yreal     => sprt_yreal_s,
       gmode          => gmode_s,
       row30          => row30_s,
