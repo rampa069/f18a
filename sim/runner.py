@@ -37,11 +37,24 @@ if str(SIM_DIR) not in sys.path:
     sys.path.insert(0, str(SIM_DIR))
 
 
-def build():
+# The OCM-PLD VDP wrapper, with a simulation model of its PLL.
+OCM_TOPLEVEL = "ocm_tb"
+OCM_SOURCES = ["tb/f18a_vdp_pll_sim.vhd"]
+OCM_RTL_SOURCES = ["ocm/f18a_vdp_ocm.vhd"]
+OCM_TB_SOURCES = ["tb/ocm_tb.vhd"]
+
+
+def build(toplevel=TOPLEVEL):
     runner = get_runner("nvc")
+    sources = [RTL_DIR / s for s in RTL_SOURCES]
+    if toplevel == OCM_TOPLEVEL:
+        sources += [SIM_DIR / s for s in OCM_SOURCES] + [RTL_DIR / s for s in OCM_RTL_SOURCES]
+        sources += [SIM_DIR / s for s in OCM_TB_SOURCES]
+    else:
+        sources += [SIM_DIR / s for s in TB_SOURCES]
     runner.build(
-        sources=[RTL_DIR / s for s in RTL_SOURCES] + [SIM_DIR / s for s in TB_SOURCES],
-        hdl_toplevel=TOPLEVEL,
+        sources=sources,
+        hdl_toplevel=toplevel,
         build_dir=BUILD_DIR,
         build_args=BUILD_ARGS,
         always=True,
@@ -49,12 +62,12 @@ def build():
     return runner
 
 
-def test(runner, test_module, testcase=None):
+def test(runner, test_module, testcase=None, toplevel=TOPLEVEL):
     """Run one cocotb test module; returns the results XML path."""
     capture_dir = BUILD_DIR / "frames" / test_module
     capture_dir.mkdir(parents=True, exist_ok=True)
     return runner.test(
-        hdl_toplevel=TOPLEVEL,
+        hdl_toplevel=toplevel,
         test_module=test_module,
         testcase=testcase,
         test_dir=SIM_DIR / "tests",

@@ -61,6 +61,16 @@ use ieee.numeric_std.all;
 
 
 entity f18a_core is
+   generic (
+      -- Pixels per raster line in the 15KHz modes, 2 lines per 15KHz line.
+      -- 796 with a 25.000MHz pixel clock, 798 with 25.057MHz (21.477MHz * 7/6)
+      -- for a 63.68..63.69us line like the 9918A.
+      H15_TOTAL            : integer := 796;
+      -- 15KHz output clock: 0 = clk_100m0_i domain, N = clk_out15_i domain
+      -- with N cycles per half pixel (2 with a 21.477MHz clock locked to the
+      -- core clocks, see f18a_video_15k).
+      OUT15_HALFPX_CLKS    : integer := 0
+   );
    port (
       clk_100m0_i          : in  std_logic;
       clk_25m0_i           : in  std_logic;
@@ -70,6 +80,7 @@ entity f18a_core is
       mode_i               : in  std_logic;
       csw_n_i              : in  std_logic;
       csr_n_i              : in  std_logic;
+      vr8_ignore_i         : in  std_logic;  -- '1' = ignore VR8+ writes when locked (V9938 hosts), '0' = mask like a 9918A
       int_n_o              : out std_logic;
       cd_i                 : in  std_logic_vector(0 to 7);
       cd_o                 : out std_logic_vector(0 to 7);
@@ -83,6 +94,7 @@ entity f18a_core is
       blu_o                : out std_logic_vector(0 to 3);
 
       -- 15KHz RGB Video Output, valid when video_15k_i = '1'
+      clk_out15_i          : in  std_logic;  -- 15KHz output clock when OUT15_HALFPX_CLKS > 0
       video_15k_i          : in  std_logic;  -- '1' = 15KHz timing, the VGA output is then not valid
       pal_i                : in  std_logic;  -- '1' = PAL (313 lines, 50Hz), '0' = NTSC (262 lines, 60Hz)
       red15_o              : out std_logic_vector(0 to 3);
@@ -298,6 +310,7 @@ begin
       mode           => mode_i,
       csw_n          => csw_n_i,
       csr_n          => csr_n_i,
+      vr8_ignore     => vr8_ignore_i,
       cd_i           => cd_i,
       cd_o           => cd_o,
       sp_cf          => sp_cf_s,
@@ -383,6 +396,9 @@ begin
 
    -- Video controller
    inst_vga_cont : entity work.f18a_vga_cont_640_60
+   generic map (
+      H15_TOTAL      => H15_TOTAL
+   )
    port map (
       vga_clk        => clk_25m0_i,
       rst_n          => reset_n_r,
@@ -601,9 +617,14 @@ begin
 
    -- 15KHz RGB output from the same pixels as the VGA output.
    inst_video_15k : entity work.f18a_video_15k
+   generic map (
+      H15_TOTAL      => H15_TOTAL,
+      OUT_HALFPX_CLKS=> OUT15_HALFPX_CLKS
+   )
    port map (
       clk            => clk_100m0_i,
       vga_clk        => clk_25m0_i,
+      out_clk        => clk_out15_i,
       frame_pal      => frame_pal_s,
       raster_x       => raster_x_s,
       raster_y       => raster_y_s,

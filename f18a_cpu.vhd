@@ -60,6 +60,7 @@ entity f18a_cpu is
       mode        : in  std_logic;
       csw_n       : in  std_logic;
       csr_n       : in  std_logic;
+      vr8_ignore  : in  std_logic;     -- '1' = ignore VR8+ writes when locked, instead of masking to VR0-7
       cd_i        : in  std_logic_vector(0 to 7);
       cd_o        : out std_logic_vector(0 to 7);
       sp_cf       : in  std_logic;
@@ -1142,8 +1143,11 @@ begin
    -- xx000RRR  9918A, locked F18A when M4 = 0
    -- xxRRRRRR  9938, locked F18A when M4 = 1, unlocked F18A
 
+   -- When locked, VR8+ writes are masked to VR0-7 like the real 9918A, unless
+   -- 80-columns (M4) is set or vr8_ignore is '1' (V9938 hosts such as an MSX2
+   -- BIOS), then they are ignored.
    cpu_vr_mask_s <=
-      "000" when reg57unlock = '0' and reg0m4 = '0' and is_vr57_s = '0' else
+      "000" when reg57unlock = '0' and reg0m4 = '0' and is_vr57_s = '0' and vr8_ignore = '0' else
       ramaddr(0 to 2);
 
    -- ramaddr: xx012345|67890123

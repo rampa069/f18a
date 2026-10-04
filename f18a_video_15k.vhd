@@ -60,8 +60,19 @@
 -- frame (NTSC: 27 + 192 + 24 picture lines, PAL: 51 + 192 + 51).  Text modes
 -- and the F18A 30-row mode use the same window.
 --
--- The output pixels are generated with a fractional step of the 100MHz clock
--- (684 half pixels every 6368 clocks), so they are 9 or 10 clocks wide.
+-- Two ways to generate the output (generic OUT_HALFPX_CLKS):
+--
+--  0  The output is in the 100MHz clock domain; the half pixels are made
+--     with a fractional step (684 every 8 * H15_TOTAL clocks), so they are
+--     9 or 10 clocks wide.  Used by the stand-alone F18A.
+--
+--  N  The output is in the out_clk domain with exactly N out_clk cycles per
+--     half pixel, e.g. N = 2 with the 21.477MHz MSX clock (1368 cycles per
+--     line, like the V9938) for the OCM-PLD wrapper.  out_clk must be locked
+--     to the core clocks so the line lengths match exactly (the F18A clocks
+--     come from a PLL on out_clk): a free running line counter is aligned to
+--     the line pairs once, through a synchronizer, and the line buffer is
+--     read with its own clock.
 
 library ieee;
 use ieee.std_logic_1164.all;
@@ -69,9 +80,14 @@ use ieee.numeric_std.all;
 use work.f18a_video_pkg.all;
 
 entity f18a_video_15k is
+   generic (
+      H15_TOTAL      : integer := 796;          -- raster pixels per line (f18a_core)
+      OUT_HALFPX_CLKS: integer := 0             -- 0 = 100MHz output, N = N out_clk cycles per half pixel
+   );
    port (
       clk         : in  std_logic;              -- 100MHz
       vga_clk     : in  std_logic;              -- 25MHz, phase aligned
+      out_clk     : in  std_logic;              -- output clock when OUT_HALFPX_CLKS > 0
       frame_pal   : in  std_logic;              -- PAL raster geometry in use
       raster_x    : in  unsigned(0 to 9);       -- VGA position, vga_clk domain
       raster_y    : in  unsigned(0 to 9);
@@ -79,6 +95,7 @@ entity f18a_video_15k is
       grn_i       : in  std_logic_vector(0 to 3);
       blu_i       : in  std_logic_vector(0 to 3);
 
+      -- Outputs, in the clk or out_clk domain.
       red_o       : out std_logic_vector(0 to 3);
       grn_o       : out std_logic_vector(0 to 3);
       blu_o       : out std_logic_vector(0 to 3);
@@ -91,14 +108,8 @@ end f18a_video_15k;
 
 architecture rtl of f18a_video_15k is
 
-   -- Clocks of 100MHz per 15KHz line, and half pixels per line.
-   constant LINE_CLKS   : integer := 6368;
+   -- Half pixels per 15KHz line.
    constant LINE_HALFPX : integer := 684;
-
-   -- Delay from the start of the VGA line pair to the first output pixel.
-   -- The output must not read a pixel before it was written: VGA x=39 is
-   -- written 1.6us into the line.
-   constant T0          : integer := 200;
 
    -- Horizontal layout in half pixels from the start of the left border.
    -- The line buffer is indexed by raster_x, and the VGA output pixel at
@@ -122,23 +133,36 @@ architecture rtl of f18a_video_15k is
    signal wr_data_r     : std_logic_vector(0 to 11) := (others => '0');
    signal wr_en_r       : std_logic := '0';
    signal wr_line_r     : unsigned(0 to 8) := (others => '0');
+   signal pair_tgl_r    : std_logic := '0';    -- toggles at every line pair
 
-   -- Read side, 100MHz.
-   signal pair_start_r  : std_logic := '0';
-   signal clks_r        : unsigned(0 to 12) := (others => '0');
-   signal acc_r         : unsigned(0 to 12) := (others => '0');
-   signal hpos_r        : unsigned(0 to 9) := (others => '1');
-   signal line_r        : unsigned(0 to 8) := (others => '0');
-   signal vsync_r       : std_logic := '0';
-   signal rd_data_r     : std_logic_vector(0 to 11) := (others => '0');
-   signal visible_r     : std_logic := '0';
-   signal hsync_r       : std_logic := '0';
-
-   signal red_r, grn_r, blu_r : std_logic_vector(0 to 3) := (others => '0');
-   signal hsync_n_r     : std_logic := '1';
-   signal vsync_n_r     : std_logic := '1';
-   signal csync_n_r     : std_logic := '1';
-   signal blank_r       : std_logic := '1';
+   -- Output decode for a half pixel position and line.
+   procedure decode (
+      hpos, line        : in  unsigned;
+      v_visible, v_on, v_off : in unsigned;
+      signal visible_r  : out std_logic;
+      signal hsync_r    : out std_logic;
+      signal vsync_r    : out std_logic
+   ) is
+   begin
+      -- Vertical sync starts and ends with the horizontal sync pulse.
+      if hpos = H_SYNC_ON then
+         if line >= v_on and line < v_off then
+            vsync_r <= '1';
+         else
+            vsync_r <= '0';
+         end if;
+      end if;
+      if hpos < H_VISIBLE and line < v_visible then
+         visible_r <= '1';
+      else
+         visible_r <= '0';
+      end if;
+      if hpos >= H_SYNC_ON and hpos < H_SYNC_OFF then
+         hsync_r <= '1';
+      else
+         hsync_r <= '0';
+      end if;
+   end procedure;
 
 begin
 
@@ -158,97 +182,223 @@ begin
       wr_data_r <= red_i & grn_i & blu_i;
       wr_en_r   <= not raster_y(9);
       wr_line_r <= raster_y(0 to 8);
+      if raster_x = 0 and raster_y(9) = '0' then
+         pair_tgl_r <= not pair_tgl_r;
+      end if;
    end if; end process;
 
    process (clk) begin if rising_edge(clk) then
       if wr_en_r = '1' then
          ram(to_integer(wr_addr_r)) <= wr_data_r;
       end if;
-      rd_data_r <= ram(to_integer(X_FIRST + hpos_r));
    end if; end process;
 
 
-   -- 15KHz line timing, restarted at the beginning of every VGA line pair.
-   process (clk)
-      variable acc_v : unsigned(0 to 12);
-   begin if rising_edge(clk) then
+   --
+   -- 100MHz output with a fractional half pixel step.
+   --
 
-      pair_start_r <= '0';
-      if wr_en_r = '1' and wr_addr_r = 0 then
-         pair_start_r <= '1';
-      end if;
+   gen_dda : if OUT_HALFPX_CLKS = 0 generate
 
-      if pair_start_r = '0' and wr_en_r = '1' and wr_addr_r = 0 then
-         clks_r <= (others => '0');
-      elsif clks_r /= LINE_CLKS then
-         clks_r <= clks_r + 1;
-      end if;
+      -- Clocks of 100MHz per 15KHz line.
+      constant LINE_CLKS : integer := 8 * H15_TOTAL;
 
-      if clks_r = T0 then
-         -- First half pixel of the line.
-         hpos_r <= (others => '0');
-         acc_r  <= (others => '0');
-         line_r <= wr_line_r;
-      else
-         -- Advance LINE_HALFPX half pixels every LINE_CLKS clocks.
-         acc_v := acc_r + LINE_HALFPX;
-         if acc_v >= LINE_CLKS then
-            acc_r <= acc_v - LINE_CLKS;
+      -- Delay from the start of the VGA line pair to the first output pixel.
+      -- The output must not read a pixel before it was written: raster_x=40
+      -- is written 1.6us into the line.
+      constant T0        : integer := 200;
+
+      signal pair_start_r  : std_logic := '0';
+      signal clks_r        : unsigned(0 to 12) := (others => '0');
+      signal acc_r         : unsigned(0 to 12) := (others => '0');
+      signal hpos_r        : unsigned(0 to 9) := (others => '1');
+      signal line_r        : unsigned(0 to 8) := (others => '0');
+      signal vsync_r       : std_logic := '0';
+      signal rd_data_r     : std_logic_vector(0 to 11) := (others => '0');
+      signal visible_r     : std_logic := '0';
+      signal hsync_r       : std_logic := '0';
+      signal red_r, grn_r, blu_r : std_logic_vector(0 to 3) := (others => '0');
+      signal hsync_n_r     : std_logic := '1';
+      signal vsync_n_r     : std_logic := '1';
+      signal csync_n_r     : std_logic := '1';
+      signal blank_r       : std_logic := '1';
+
+   begin
+
+      process (clk)
+         variable acc_v : unsigned(0 to 12);
+      begin if rising_edge(clk) then
+
+         rd_data_r <= ram(to_integer(X_FIRST + hpos_r));
+
+         -- Line timing, restarted at the beginning of every VGA line pair.
+         pair_start_r <= '0';
+         if wr_en_r = '1' and wr_addr_r = 0 then
+            pair_start_r <= '1';
+         end if;
+
+         if pair_start_r = '0' and wr_en_r = '1' and wr_addr_r = 0 then
+            clks_r <= (others => '0');
+         elsif clks_r /= LINE_CLKS then
+            clks_r <= clks_r + 1;
+         end if;
+
+         if clks_r = T0 then
+            -- First half pixel of the line.
+            hpos_r <= (others => '0');
+            acc_r  <= (others => '0');
+            line_r <= wr_line_r;
+         else
+            -- Advance LINE_HALFPX half pixels every LINE_CLKS clocks.
+            acc_v := acc_r + LINE_HALFPX;
+            if acc_v >= LINE_CLKS then
+               acc_r <= acc_v - LINE_CLKS;
+               if hpos_r /= 1023 then
+                  hpos_r <= hpos_r + 1;
+               end if;
+            else
+               acc_r <= acc_v;
+            end if;
+         end if;
+
+         -- Pipeline stage aligned with rd_data_r.
+         decode(hpos_r, line_r, v_visible_s, v_sync_on_s, v_sync_off_s,
+                visible_r, hsync_r, vsync_r);
+
+         -- Outputs.
+         if visible_r = '1' then
+            red_r <= rd_data_r(0 to 3);
+            grn_r <= rd_data_r(4 to 7);
+            blu_r <= rd_data_r(8 to 11);
+         else
+            red_r <= (others => '0');
+            grn_r <= (others => '0');
+            blu_r <= (others => '0');
+         end if;
+         blank_r   <= not visible_r;
+         hsync_n_r <= not hsync_r;
+         vsync_n_r <= not vsync_r;
+         -- Composite sync: hsync, inverted during vsync so the monitor keeps
+         -- its horizontal lock.
+         csync_n_r <= not (hsync_r xor vsync_r);
+
+      end if; end process;
+
+      red_o     <= red_r;
+      grn_o     <= grn_r;
+      blu_o     <= blu_r;
+      hsync_n_o <= hsync_n_r;
+      vsync_n_o <= vsync_n_r;
+      csync_n_o <= csync_n_r;
+      blank_o   <= blank_r;
+
+   end generate;
+
+
+   --
+   -- out_clk output with an integer number of clocks per half pixel.
+   --
+
+   gen_div : if OUT_HALFPX_CLKS > 0 generate
+
+      constant LINE_CLKS : integer := LINE_HALFPX * OUT_HALFPX_CLKS;
+
+      -- First output pixel this many out_clk cycles after the synchronized
+      -- start of the line pair (about 2.3us with 21.477MHz).
+      constant T0        : integer := 24 * OUT_HALFPX_CLKS;
+
+      signal pair_sync_r   : std_logic_vector(0 to 2) := "000";
+      signal locked_r      : std_logic := '0';
+      signal cnt_r         : integer range 0 to LINE_CLKS - 1 := 0;
+      signal sub_r         : integer range 0 to OUT_HALFPX_CLKS - 1 := 0;
+      signal hpos_r        : unsigned(0 to 9) := (others => '1');
+      signal line_r        : unsigned(0 to 8) := (others => '0');
+      signal v_visible_r   : unsigned(0 to 8) := (others => '0');
+      signal v_sync_on_r   : unsigned(0 to 8) := (others => '0');
+      signal v_sync_off_r  : unsigned(0 to 8) := (others => '0');
+      signal vsync_r       : std_logic := '0';
+      signal rd_data_r     : std_logic_vector(0 to 11) := (others => '0');
+      signal visible_r     : std_logic := '0';
+      signal hsync_r       : std_logic := '0';
+      signal red_r, grn_r, blu_r : std_logic_vector(0 to 3) := (others => '0');
+      signal hsync_n_r     : std_logic := '1';
+      signal vsync_n_r     : std_logic := '1';
+      signal csync_n_r     : std_logic := '1';
+      signal blank_r       : std_logic := '1';
+
+   begin
+
+      process (out_clk)
+         variable pair_edge_v : boolean;
+      begin if rising_edge(out_clk) then
+
+         rd_data_r <= ram(to_integer(X_FIRST + hpos_r));
+
+         -- Line pair start, synchronized.  The line counter free runs once
+         -- aligned, since a line pair is exactly LINE_CLKS out_clk cycles;
+         -- it is realigned only when the error is more than one cycle
+         -- (start up, or a change of the raster), so synchronizer
+         -- uncertainty never moves the picture.
+         pair_sync_r <= pair_tgl_r & pair_sync_r(0 to 1);
+         pair_edge_v := pair_sync_r(1) /= pair_sync_r(2);
+
+         if pair_edge_v and (locked_r = '0' or (cnt_r > 1 and cnt_r < LINE_CLKS - 1)) then
+            cnt_r    <= 1;
+            locked_r <= '1';
+         elsif cnt_r = LINE_CLKS - 1 then
+            cnt_r <= 0;
+         else
+            cnt_r <= cnt_r + 1;
+         end if;
+
+         if cnt_r = T0 then
+            -- First half pixel of the line.  The line pair number and the
+            -- PAL geometry change at the start of a pair, T0 cycles ago, so
+            -- they are stable here.
+            hpos_r <= (others => '0');
+            sub_r  <= 0;
+            line_r <= wr_line_r;
+            v_visible_r  <= v_visible_s;
+            v_sync_on_r  <= v_sync_on_s;
+            v_sync_off_r <= v_sync_off_s;
+         elsif sub_r = OUT_HALFPX_CLKS - 1 then
+            sub_r <= 0;
             if hpos_r /= 1023 then
                hpos_r <= hpos_r + 1;
             end if;
          else
-            acc_r <= acc_v;
+            sub_r <= sub_r + 1;
          end if;
-      end if;
 
-      -- Vertical sync starts and ends with the horizontal sync pulse.
-      if hpos_r = H_SYNC_ON then
-         if line_r >= v_sync_on_s and line_r < v_sync_off_s then
-            vsync_r <= '1';
+         -- Pipeline stage aligned with rd_data_r.
+         decode(hpos_r, line_r, v_visible_r, v_sync_on_r, v_sync_off_r,
+                visible_r, hsync_r, vsync_r);
+
+         -- Outputs.
+         if visible_r = '1' then
+            red_r <= rd_data_r(0 to 3);
+            grn_r <= rd_data_r(4 to 7);
+            blu_r <= rd_data_r(8 to 11);
          else
-            vsync_r <= '0';
+            red_r <= (others => '0');
+            grn_r <= (others => '0');
+            blu_r <= (others => '0');
          end if;
-      end if;
+         blank_r   <= not visible_r;
+         hsync_n_r <= not hsync_r;
+         vsync_n_r <= not vsync_r;
+         csync_n_r <= not (hsync_r xor vsync_r);
 
-      -- Pipeline stage aligned with rd_data_r.
-      if hpos_r < H_VISIBLE and line_r < v_visible_s then
-         visible_r <= '1';
-      else
-         visible_r <= '0';
-      end if;
+      end if; end process;
 
-      if hpos_r >= H_SYNC_ON and hpos_r < H_SYNC_OFF then
-         hsync_r <= '1';
-      else
-         hsync_r <= '0';
-      end if;
+      red_o     <= red_r;
+      grn_o     <= grn_r;
+      blu_o     <= blu_r;
+      hsync_n_o <= hsync_n_r;
+      vsync_n_o <= vsync_n_r;
+      csync_n_o <= csync_n_r;
+      blank_o   <= blank_r;
 
-      -- Outputs.
-      if visible_r = '1' then
-         red_r <= rd_data_r(0 to 3);
-         grn_r <= rd_data_r(4 to 7);
-         blu_r <= rd_data_r(8 to 11);
-      else
-         red_r <= (others => '0');
-         grn_r <= (others => '0');
-         blu_r <= (others => '0');
-      end if;
-      blank_r   <= not visible_r;
-      hsync_n_r <= not hsync_r;
-      vsync_n_r <= not vsync_r;
-      -- Composite sync: hsync, inverted during vsync so the monitor keeps
-      -- its horizontal lock.
-      csync_n_r <= not (hsync_r xor vsync_r);
-
-   end if; end process;
-
-   red_o     <= red_r;
-   grn_o     <= grn_r;
-   blu_o     <= blu_r;
-   hsync_n_o <= hsync_n_r;
-   vsync_n_o <= vsync_n_r;
-   csync_n_o <= csync_n_r;
-   blank_o   <= blank_r;
+   end generate;
 
 end rtl;

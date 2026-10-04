@@ -59,7 +59,8 @@ use ieee.std_logic_1164.all;
 package f18a_video_pkg is
 
    type video_geom_t is record
-      hmax     : integer;  -- last raster x (line is hmax + 1 pixels)
+      hmax     : integer;  -- last raster x (line is hmax + 1 pixels; the 15KHz
+                           -- geometries use the H15_TOTAL generic of f18a_core)
       vmax     : integer;  -- last raster y (frame is vmax + 1 lines)
       vsize    : integer;  -- raster lines with picture (border + active)
       vfp      : integer;  -- VGA vsync start line

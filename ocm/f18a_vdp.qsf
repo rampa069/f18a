@@ -1,14 +1,12 @@
-# F18A stand-alone VDP, reference Quartus project for Cyclone IV E.
-# No pin assignments: this project checks synthesis, fit and timing on the
-# reference device.  Add a board specific .qsf section (or a new revision)
-# with the pin locations for real hardware.
+# Synthesis check of the OCM-PLD VDP replacement on its own (entity vdp).
+# In a real core, add ocm/f18a_vdp_ocm.vhd, ocm/f18a_vdp_pll.v and the F18A
+# core files to the core's project instead of src/video/vdp*.vhd.
 
 set_global_assignment -name FAMILY "Cyclone IV E"
 set_global_assignment -name DEVICE EP4CE22F17C8
-set_global_assignment -name TOP_LEVEL_ENTITY f18a_top_altera
+set_global_assignment -name TOP_LEVEL_ENTITY vdp
 set_global_assignment -name PROJECT_OUTPUT_DIRECTORY output_files
 set_global_assignment -name VHDL_INPUT_VERSION VHDL_2008
-
 set_global_assignment -name VHDL_FILE ../f18a_video_pkg.vhd
 set_global_assignment -name VHDL_FILE ../f18a_version.vhd
 set_global_assignment -name VHDL_FILE ../f18a_color.vhd
@@ -24,29 +22,17 @@ set_global_assignment -name VHDL_FILE ../f18a_tile_linebuf.vhd
 set_global_assignment -name VHDL_FILE ../f18a_tiles.vhd
 set_global_assignment -name VHDL_FILE ../f18a_sprites.vhd
 set_global_assignment -name VHDL_FILE ../f18a_core.vhd
-set_global_assignment -name VERILOG_FILE f18a_pll.v
-set_global_assignment -name VHDL_FILE f18a_top_altera.vhd
-set_global_assignment -name SDC_FILE f18a.sdc
+set_global_assignment -name VERILOG_FILE f18a_vdp_pll.v
+set_global_assignment -name VHDL_FILE f18a_vdp_ocm.vhd
+set_global_assignment -name SDC_FILE f18a_vdp.sdc
 
-# The host bus pins are 5V on a real 9918A socket and need level shifting;
-# the FPGA side is 3.3V LVTTL.
-set_global_assignment -name STRATIX_DEVICE_IO_STANDARD "3.3-V LVTTL"
-set_global_assignment -name RESERVE_ALL_UNUSED_PINS_WEAK_PULLUP "AS INPUT TRI-STATED"
-set_global_assignment -name CYCLONEII_RESERVE_NCEO_AFTER_CONFIGURATION "USE AS REGULAR IO"
-
-# Jumper inputs are pulled up (jumper fitted = '0'), as on the original board.
-set_instance_assignment -name WEAK_PULL_UP_RESISTOR ON -to usr1_net
-set_instance_assignment -name WEAK_PULL_UP_RESISTOR ON -to usr2_net
-set_instance_assignment -name WEAK_PULL_UP_RESISTOR ON -to usr3_net
-set_instance_assignment -name WEAK_PULL_UP_RESISTOR ON -to usr4_net
-set_instance_assignment -name WEAK_PULL_UP_RESISTOR ON -to pal_net
+# The ports connect to the rest of the core, not to pins.
+set_instance_assignment -name VIRTUAL_PIN ON -to *
+set_instance_assignment -name VIRTUAL_PIN OFF -to clk21m
 
 set_global_assignment -name OPTIMIZATION_MODE "HIGH PERFORMANCE EFFORT"
-# The 100MHz paths from RAM outputs to the GPU have little margin (f18a-zus).
 set_global_assignment -name PHYSICAL_SYNTHESIS_COMBO_LOGIC ON
 set_global_assignment -name PHYSICAL_SYNTHESIS_REGISTER_DUPLICATION ON
 set_global_assignment -name PHYSICAL_SYNTHESIS_REGISTER_RETIMING ON
 set_global_assignment -name PHYSICAL_SYNTHESIS_EFFORT EXTRA
-# Fitter seed with the best slack in a sweep (seeds 2-5 all met timing).
-set_global_assignment -name SEED 2
 set_global_assignment -name TIMING_ANALYZER_MULTICORNER_ANALYSIS ON

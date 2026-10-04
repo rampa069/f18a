@@ -13,8 +13,8 @@ make -C sim setup         # creates ../.venv with cocotb, pytest, numpy, pillow
 ## Running
 
 ```bash
-make -C sim test                        # everything (~17 min)
-make -C sim test T=host_io              # one module: host_io, timing, render, video15k
+make -C sim test                        # everything (~21 min)
+make -C sim test T=host_io              # one module: host_io, timing, render, video15k, ocm
 F18A_UPDATE_GOLDEN=1 make -C sim test   # regenerate sim/golden/*.png
 ```
 
@@ -33,6 +33,8 @@ Logs, results and captured frames go to `sim/sim_build/`
 | `tests/test_timing.py` | VGA sync timing, active area, frame interrupt and status F flag |
 | `tests/test_render.py` | Renders each scene, compares against the model and the golden PNGs |
 | `tests/test_video15k.py` | 15 kHz output, NTSC and PAL: sync timing, composite sync, interrupt rate, image vs. model |
+| `tb/ocm_tb.vhd`, `tb/f18a_vdp_pll_sim.vhd` | OCM-PLD VDP wrapper testbench (CLK21M, frames sampled on CLK21M) and PLL model |
+| `tests/test_ocm.py` | OCM-PLD wrapper: dot clocks, bus, MSX2 register writes, PAL/NTSC selection, 15/31 kHz line timing and image |
 
 Each render test is checked twice: against the reference model (is the
 output a correct 9918A image?) and against `golden/<scene>.png` (did the

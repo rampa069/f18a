@@ -45,8 +45,9 @@ ground) selects the standard; it takes effect at the next frame.
 | jumper | PAL | 313 | 51 / 51 | 50.17 Hz |
 
 Lines are 63.68 us (15.70 kHz) with 13 + 256 + 15 visible pixels.  Outputs:
-4-bit RGB, `hsync_net`, `vsync_net` and composite `csync_net`, all syncs
-active low.  The core also keeps the original 640x480 VGA output
+4-bit RGB, `hsync_net`, `vsync_net` and composite `csync_net` (all syncs
+active low), and `blank_net` ('1' outside the picture, the inverse of display
+enable, e.g. for MiSTer).  The core also keeps the original 640x480 VGA output
 (`video_15k_i = '0'`), not used by this top level.
 
 ## Notes

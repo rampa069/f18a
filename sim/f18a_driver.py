@@ -144,6 +144,10 @@ class F18A:
         """Capture the next complete frame, returned as an (480, 640, 3)
         array of 4-bit RGB values."""
         dut = self.dut
+        # Callers often start right at a vsync edge, which the testbench sees
+        # one clock later: enable the capture after it so only one frame is
+        # armed.
+        await ClockCycles(dut.clk_25m0_o, 4)
         start = int(dut.frames_o.value)
         dut.capture_en_i.value = 1
         # Wait for the capture to be armed at the next vsync, then disarm so
@@ -161,6 +165,7 @@ class F18A:
         """Capture the next complete 15KHz frame, returned as an
         (lines, 568, 3) array of 4-bit RGB values."""
         dut = self.dut
+        await ClockCycles(dut.clk_100m0_o, 16)
         start = int(dut.frames15_o.value)
         dut.capture15_en_i.value = 1
         await FallingEdge(dut.vsync15_n_o)

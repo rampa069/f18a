@@ -24,3 +24,8 @@ altera/output_files/
 altera/*.log
 altera/*.qws
 altera/crit.txt
+ocm/db/
+ocm/incremental_db/
+ocm/output_files/
+ocm/*.log
+ocm/*.qws

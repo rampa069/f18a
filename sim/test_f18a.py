@@ -1,4 +1,4 @@
-"""pytest entry point: builds the simulation once and runs each cocotb module.
+"""pytest entry point: builds each simulation once and runs the cocotb modules.
 
     make test                         # everything
     make test T=test_render           # one module
@@ -10,17 +10,29 @@ from cocotb_tools.check_results import get_results
 
 import runner
 
-MODULES = ["test_host_io", "test_timing", "test_render", "test_video15k"]
+# (cocotb module, HDL toplevel)
+MODULES = [
+    ("test_host_io", runner.TOPLEVEL),
+    ("test_timing", runner.TOPLEVEL),
+    ("test_render", runner.TOPLEVEL),
+    ("test_video15k", runner.TOPLEVEL),
+    ("test_ocm", runner.OCM_TOPLEVEL),
+]
+
+_built = {}
 
 
-@pytest.fixture(scope="session")
-def sim():
-    return runner.build()
+def sim(toplevel):
+    # Both toplevels share the build directory, so rebuild when switching.
+    if _built.get("toplevel") != toplevel:
+        _built["runner"] = runner.build(toplevel)
+        _built["toplevel"] = toplevel
+    return _built["runner"]
 
 
-@pytest.mark.parametrize("module", MODULES)
-def test_module(sim, module):
-    xml = runner.test(sim, module)
+@pytest.mark.parametrize("module,toplevel", MODULES, ids=[m for m, _ in MODULES])
+def test_module(module, toplevel):
+    xml = runner.test(sim(toplevel), module, toplevel=toplevel)
     try:
         _, failed = get_results(xml)
     except SystemExit:

@@ -71,6 +71,7 @@ entity f18a_top_altera is
       hsync_net      : out std_logic;
       vsync_net      : out std_logic;
       csync_net      : out std_logic;
+      blank_net      : out std_logic;   -- '1' outside the picture (not display enable)
       red_net        : out std_logic_vector(0 to 3);
       grn_net        : out std_logic_vector(0 to 3);
       blu_net        : out std_logic_vector(0 to 3);
@@ -122,7 +123,7 @@ architecture rtl of f18a_top_altera is
    -- Output routing.
    signal cd_out_s         : std_logic_vector(0 to 7);
    signal pal_s            : std_logic;
-   signal hsync15_s, vsync15_s, csync15_s : std_logic;
+   signal hsync15_s, vsync15_s, csync15_s, blank15_s : std_logic;
    signal red15_s, grn15_s, blu15_s : std_logic_vector(0 to 3);
 
    -- Output GROM and CPU clock generation.
@@ -194,6 +195,7 @@ begin
       mode_i         => mode_net,
       csw_n_i        => csw_n_net,
       csr_n_i        => csr_n_net,
+      vr8_ignore_i   => '0',            -- 9918A socket: mask VR8+ writes
       int_n_o        => int_n_net,
       cd_i           => cd_net,
       cd_o           => cd_out_s,
@@ -207,6 +209,7 @@ begin
       blu_o          => open,
 
       -- 15KHz Video Output
+      clk_out15_i    => '0',
       video_15k_i    => '1',
       pal_i          => pal_s,
       red15_o        => red15_s,
@@ -215,7 +218,7 @@ begin
       hsync15_n_o    => hsync15_s,
       vsync15_n_o    => vsync15_s,
       csync15_n_o    => csync15_s,
-      blank15_o      => open,
+      blank15_o      => blank15_s,
 
       -- Feature Selection
       sprite_max_i   => usr1_net,      -- Default sprite max, '0' = 32, '1' = 4
@@ -235,6 +238,7 @@ begin
    hsync_net <= hsync15_s;
    vsync_net <= vsync15_s;
    csync_net <= csync15_s;
+   blank_net <= blank15_s;
    red_net   <= red15_s;
    grn_net   <= grn15_s;
    blu_net   <= blu15_s;

@@ -104,6 +104,7 @@ begin
       mode_i         => mode_i,
       csw_n_i        => csw_n_i,
       csr_n_i        => csr_n_i,
+      vr8_ignore_i   => '0',
       int_n_o        => int_n_o,
       cd_i           => cd_i,
       cd_o           => cd_o,
@@ -115,6 +116,7 @@ begin
       blu_o          => blu_s,
       sprite_max_i   => sprite_max_i,
       scanlines_i    => scanlines_i,
+      clk_out15_i    => '0',
       video_15k_i    => video_15k_i,
       pal_i          => pal_i,
       red15_o        => red15_s,
@@ -209,7 +211,7 @@ begin
    -- after the position counter in f18a_video_15k changes; sample it one
    -- clock later.
    capture15 : process (clk_100m0)
-      alias hpos is << signal .f18a_tb.inst_core.inst_video_15k.hpos_r : unsigned(0 to 9) >>;
+      alias hpos is << signal .f18a_tb.inst_core.inst_video_15k.gen_dda.hpos_r : unsigned(0 to 9) >>;
       type hpos_dly_t is array (1 to 4) of unsigned(0 to 9);
       variable hpos_d  : hpos_dly_t := (others => (others => '0'));
       file     f       : text;

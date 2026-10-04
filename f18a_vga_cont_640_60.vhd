@@ -52,6 +52,9 @@ use ieee.numeric_std.all;
 use work.f18a_video_pkg.all;
 
 entity f18a_vga_cont_640_60 is
+   generic (
+      H15_TOTAL  : integer := 796   -- pixels per line in the 15KHz geometries
+   );
    port(
       vga_clk  : in std_logic;
       rst_n    : in std_logic;
@@ -148,22 +151,32 @@ begin
    -- Increment vertical counter after each horizontal raster
    -- until VMAX is reached, then reset.
    v_count: process (vga_clk)
+      procedure select_geometry is
+      begin
+         frame_15k_r <= timing_15k;
+         frame_pal_r <= timing_15k and timing_pal;
+         if timing_15k = '1' then
+            hmax_r <= to_unsigned(H15_TOTAL - 1, 10);
+         else
+            hmax_r <= to_unsigned(GEOM_VGA.hmax, 10);
+         end if;
+         vmax_r  <= to_unsigned(video_geom(timing_15k, timing_pal).vmax, 10);
+         vsize_r <= to_unsigned(video_geom(timing_15k, timing_pal).vsize, 10);
+         vfp_r   <= to_unsigned(video_geom(timing_15k, timing_pal).vfp, 10);
+         vsp_r   <= to_unsigned(video_geom(timing_15k, timing_pal).vsp, 10);
+      end procedure;
    begin
       if rising_edge(vga_clk) then
       if rst_n = '0' then
          vcounter <= (others => '0');
+         -- Start in the selected geometry, not one VGA frame later.
+         select_geometry;
       else
          if hcounter = hmax_r then
             if vcounter = vmax_r then
                vcounter <= (others => '0');
                -- Select the frame size for the next frame.
-               frame_15k_r <= timing_15k;
-               frame_pal_r <= timing_15k and timing_pal;
-               hmax_r  <= to_unsigned(video_geom(timing_15k, timing_pal).hmax, 10);
-               vmax_r  <= to_unsigned(video_geom(timing_15k, timing_pal).vmax, 10);
-               vsize_r <= to_unsigned(video_geom(timing_15k, timing_pal).vsize, 10);
-               vfp_r   <= to_unsigned(video_geom(timing_15k, timing_pal).vfp, 10);
-               vsp_r   <= to_unsigned(video_geom(timing_15k, timing_pal).vsp, 10);
+               select_geometry;
             else
                vcounter <= vcounter + 1;
             end if;
