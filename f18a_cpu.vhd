@@ -61,6 +61,8 @@ entity f18a_cpu is
       csw_n       : in  std_logic;
       csr_n       : in  std_logic;
       vr8_ignore  : in  std_logic;     -- '1' = ignore VR8+ writes when locked, instead of masking to VR0-7
+      v9938       : in  std_logic;     -- '1' = V9938 mode (static): R0-R46, ports 9Ah/9Bh, 128 KB
+      mode1       : in  std_logic;     -- port address bit 1 (V9938 ports 2 and 3)
       cd_i        : in  std_logic_vector(0 to 7);
       cd_o        : out std_logic_vector(0 to 7);
       sp_cf       : in  std_logic;
@@ -71,10 +73,12 @@ entity f18a_cpu is
       scanline    : in  unsigned(0 to 7);
       vscanln_en  : out std_logic;                    -- virtual scan line enable
       blank       : in  std_logic;                    -- '1' when blanking (horz and vert) for GPU
+      vr          : in  std_logic;                    -- '1' outside the active lines (V9938 S#2 VR)
+      hr          : in  std_logic;                    -- '1' outside the active pixels (V9938 S#2 HR)
    -- VRAM Interface
       vdin        : in  std_logic_vector(0 to 7);
       vwe         : out std_logic;
-      vaddr       : out std_logic_vector(0 to 13);
+      vaddr       : out std_logic_vector(0 to 16);   -- 17 bits, the 9918A uses the low 14
       vdout       : out std_logic_vector(0 to 7);
    -- PRAM Interface
       pwe         : out std_logic;
@@ -146,6 +150,11 @@ end f18a_cpu;
 
 architecture rtl of f18a_cpu is
 
+   function to_std_logic(b : boolean) return std_logic is
+   begin
+      if b then return '1'; else return '0'; end if;
+   end function;
+
    -- **NOTE**
    -- These are also defined in the GPU module to avoid using actual paths
    -- and resources to transfer a constant to the GPU module.
@@ -168,6 +177,7 @@ architecture rtl of f18a_cpu is
       st_pram_write, st_pram_1st, st_pram_2nd,
       st_read_status, st_setup_addr,
       st_reg_write, st_prefetch, st_save_prefetch,
+      st_v38_pal, st_v38_ind, st_v38_rd,
       st_wait_eoc);
 
    signal io_state   : state_io_type;
@@ -231,6 +241,22 @@ architecture rtl of f18a_cpu is
    signal cd_out        : std_logic_vector(0 to 7);
    signal cd_in, cd_r   : std_logic_vector(0 to 7);
    signal mode_r        : std_logic;
+   signal mode1_r       : std_logic := '0';
+
+   -- V9938 mode.  The V9938 registers R0-R46 are kept here; in V9938 mode
+   -- the F18A registers only take R0-R7 and R47-R63 (see docs/v9938-diseno.md).
+   type v38_regs_t is array (0 to 46) of std_logic_vector(0 to 7);
+   signal v38_reg       : v38_regs_t := (others => (others => '0'));
+   signal v38_m         : std_logic_vector(0 to 4);   -- M5 M4 M3 M2 M1
+   signal v38_planar    : std_logic;                  -- G6 / G7: rotated VRAM addresses
+   signal v38_carry     : std_logic;                  -- address carries into R14
+   signal v38_r16_wr    : std_logic := '0';           -- R16 written, reset the palette byte latch
+   signal v38_pal_ff    : std_logic := '0';
+   signal v38_pal_1st   : std_logic_vector(0 to 7);
+   signal v38_pwe       : std_logic := '0';
+   signal v38_paddr     : std_logic_vector(0 to 5);
+   signal v38_pdata     : std_logic_vector(0 to 11);
+   signal vaddr_log     : std_logic_vector(0 to 16);  -- logical VRAM address
 
    -- Status register output, depends on status register pointer R15
    signal status_reg    : std_logic_vector(0 to 7);
@@ -374,6 +400,7 @@ begin
          -- are stable, the mode and input data will be as well.  So just
          -- register these inputs.
          mode_r <= mode;
+         mode1_r <= mode1 and v9938;
          cd_r   <= cd_i;
       end if;
       end if;
@@ -391,13 +418,36 @@ begin
 
 
    -- The status register number determines which status is returned.
-   process (reg15sreg_num, intr_ff, sp_5s_ff, sp_c_ff, sp_5th_reg, horz_ff,
+   process (v9938, v38_reg, vr, hr,
+   reg15sreg_num, intr_ff, sp_5s_ff, sp_c_ff, sp_5th_reg, horz_ff,
    gpu_status, gpu_running, scanline, reg_val, blank,
    cnt_nano_sr, cnt_micro_sr, cnt_milli_sr, cnt_sec_sr)
    begin
 
       clear_sr0 <= '0';
       clear_sr1 <= '0';
+
+      if v9938 = '1' then
+         -- V9938 status registers, selected by R15.
+         case v38_reg(15)(4 to 7) is
+         when X"0" =>
+            status_reg <= intr_ff & sp_5s_ff & sp_c_ff & sp_5th_reg;
+            clear_sr0 <= '1';
+         when X"1" =>   -- FL, LPS, ID 0 (V9938), FH
+            status_reg <= "0000000" & horz_ff;
+            clear_sr1 <= '1';
+         when X"2" =>   -- TR, VR, HR, BD, 1, 1, EO, CE
+            status_reg <= '1' & vr & hr & "011" & "00";
+         when X"4" | X"9" =>
+            status_reg <= X"FE";
+         when X"6" =>
+            status_reg <= X"FC";
+         when X"3" | X"5" | X"7" | X"8" =>
+            status_reg <= X"00";
+         when others =>
+            status_reg <= X"FF";
+         end case;
+      else
 
       case reg15sreg_num is
 
@@ -448,6 +498,7 @@ begin
          status_reg <= X"00";
 
       end case;
+      end if;
    end process;
 
 
@@ -534,6 +585,9 @@ begin
    -- operation is the same for both VDP writes: csw=0 mode=1.  The only way the VDP
    -- knows the difference is to check the two MSbits of the second byte (see io_subop).
    io_next <=
+      st_v38_rd      when (mode1_r = '1' and csr = '0') else
+      st_v38_pal     when (mode1_r = '1' and mode_r = '0' and csw = '0') else
+      st_v38_ind     when (mode1_r = '1' and mode_r = '1' and csw = '0') else
       st_data_read   when (mode_r = '0' and csr = '0') else
       st_data_write  when (mode_r = '0' and csw = '0' and data_port_mode = '0') else
       st_pram_write  when (mode_r = '0' and csw = '0' and data_port_mode = '1') else
@@ -583,6 +637,7 @@ begin
          -- During reset, hold controlling flags.
          io_state       <= st_reset;
          addr_ff        <= '0';
+         v38_pal_ff     <= '0';
          pram_ff        <= '0';     -- palette ram ff
          data_port_mode <= '0';     -- data-port mode to VRAM
          inc_en         <= '0';
@@ -596,6 +651,8 @@ begin
 
          -- Enable signals are only active for 1 clock.
          we <= '0';           -- VRAM write enable
+         v38_pwe <= '0';      -- V9938 palette write enable
+         if v38_r16_wr = '1' then v38_pal_ff <= '0'; end if;
          inc_en <= '0';       -- VRAM address counter enable
          pram_we <= '0';      -- PRAM write enable
          pram_inc_en <= '0';  -- PRAM address counter enable
@@ -727,10 +784,39 @@ begin
             inc_en <= '1';
             addr_ff <= '0';
 
+         when st_v38_rd =>
+
+            -- V9938 ports 9Ah / 9Bh are write only.
+            io_state <= st_wait_eoc;
+            cd_out <= x"FF";
+
+         when st_v38_pal =>
+
+            -- V9938 palette, port 9Ah: 0RRR0BBB then 00000GGG, to the
+            -- palette entry in R16 (F18A palette 0), 3 to 4 bits per color.
+            io_state <= st_wait_eoc;
+            if v38_pal_ff = '0' then
+               v38_pal_1st <= cd_in;
+               v38_pal_ff <= '1';
+            else
+               v38_pal_ff <= '0';
+               v38_pwe <= '1';
+               v38_paddr <= "00" & v38_reg(16)(4 to 7);
+               v38_pdata <= v38_pal_1st(1 to 3) & v38_pal_1st(1) &
+                            cd_in(5 to 7) & cd_in(5) &
+                            v38_pal_1st(5 to 7) & v38_pal_1st(5);
+            end if;
+
+         when st_v38_ind =>
+
+            -- V9938 indirect register write, port 9Bh (register process).
+            io_state <= st_wait_eoc;
+
          when st_read_status =>
 
             io_state <= st_wait_eoc;
             cd_out <= status_reg;
+            v38_pal_ff <= '0';
             gpu_pause_req <= '0';
             gpu_pause <= '0';
 
@@ -798,7 +884,9 @@ begin
    -- the original registers.
    is_vr0to7_s <= '1' when reg_sel < "001000" else '0';
    is_vr57_s   <= '1' when ramaddr(0 to 5) = "111001" else '0';
-   reg_we      <= is_vr0to7_s or is_vr57_s or reg57unlock;
+   -- In V9938 mode R8-R46 are V9938 registers, not F18A registers.
+   reg_we      <= (is_vr0to7_s or is_vr57_s or reg57unlock) and
+                  not (v9938 and to_std_logic(reg_sel >= "001000" and reg_sel <= "101110"));
 
    -- Track consecutive writes to VR57 with "000111xx" data.  When only
    -- considering the low 3-bits for a register, this would be the same
@@ -894,7 +982,7 @@ begin
          end if;
 
 
-         if (io_state = st_reg_write and reg_we = '1') or gpu_rwe = '1' then
+         if ((io_state = st_reg_write or io_state = st_v38_ind) and reg_we = '1') or gpu_rwe = '1' then
 
             -- For every write other than reg57, the counter is reset.
             reg57cnt <= '0';
@@ -1147,7 +1235,7 @@ begin
    -- 80-columns (M4) is set or vr8_ignore is '1' (V9938 hosts such as an MSX2
    -- BIOS), then they are ignored.
    cpu_vr_mask_s <=
-      "000" when reg57unlock = '0' and reg0m4 = '0' and is_vr57_s = '0' and vr8_ignore = '0' else
+      "000" when reg57unlock = '0' and reg0m4 = '0' and is_vr57_s = '0' and vr8_ignore = '0' and v9938 = '0' else
       ramaddr(0 to 2);
 
    -- ramaddr: xx012345|67890123
@@ -1157,18 +1245,28 @@ begin
       cd_in(2 to 7) & ramaddr(6 to 13);                  -- latch MSB
 
    -- Register access mux.  CPU or GPU
-   regaddr <= cpu_vr_mask_s & ramaddr(3 to 13) when gpu_pause = '1' else gpu_raddr;
+   -- An indirect V9938 register write (port 9Bh) addresses the register in R17.
+   regaddr <=
+      v38_reg(17)(2 to 7) & cd_in when io_state = st_v38_ind else
+      cpu_vr_mask_s & ramaddr(3 to 13) when gpu_pause = '1' else
+      gpu_raddr;
 
 
    -- VRAM interface.  ramaddr is fetched every clock cycle.
    vwe <= we when gpu_pause = '1' else gpu_we;
-   vaddr <= ramaddr when gpu_pause = '1' else gpu_addr;
+   -- 17-bit address: R14 (V9938) and the address counter.  In G6 / G7 the
+   -- V9938 VRAM is two interleaved banks: physical = logical rotated right.
+   vaddr_log <= v38_reg(14)(5 to 7) & ramaddr when v9938 = '1' else "000" & ramaddr;
+   vaddr <=
+      "000" & gpu_addr when gpu_pause = '0' else
+      vaddr_log(16) & vaddr_log(0 to 15) when v38_planar = '1' else
+      vaddr_log;
    vdout <= cd_in when gpu_pause = '1' else gpu_dout;
 
    -- PRAM interface.
-   pwe <= pram_we when gpu_pause = '1' else gpu_pwe;
-   paddr <= pram_addr when gpu_pause = '1' else gpu_paddr;
-   pdout <= pram_data when gpu_pause = '1' else gpu_pdout;
+   pwe <= (pram_we or v38_pwe) when gpu_pause = '1' else gpu_pwe;
+   paddr <= v38_paddr when v38_pwe = '1' else pram_addr when gpu_pause = '1' else gpu_paddr;
+   pdout <= v38_pdata when v38_pwe = '1' else pram_data when gpu_pause = '1' else gpu_pdout;
 
    -- PRAM counter.
    process (clk)
@@ -1179,6 +1277,53 @@ begin
          elsif pram_inc_en = '1' then
             pram_addr <= pram_addr + 1;
          end if;
+      end if;
+   end process;
+
+
+   -- V9938 registers R0-R46.
+   v38_m      <= v38_reg(0)(4) & v38_reg(0)(5) & v38_reg(0)(6) & v38_reg(1)(4) & v38_reg(1)(3);
+   v38_planar <= v9938 and v38_m(0) and v38_m(2);            -- G6, G7
+   v38_carry  <= v38_m(0) or v38_m(1);                       -- not G1, G2, MC, T1
+
+   process (clk)
+      variable reg : integer range 0 to 63;
+   begin
+      if rising_edge(clk) then
+      if rst_n = '0' then
+         v38_reg <= (others => (others => '0'));
+         v38_r16_wr <= '0';
+      elsif v9938 = '1' then
+         v38_r16_wr <= '0';
+
+         if io_state = st_reg_write then
+            -- Direct write: register number and data in the address counter.
+            reg := to_integer(unsigned(ramaddr(0 to 5)));
+            if reg <= 46 then
+               v38_reg(reg) <= ramaddr(6 to 13);
+            end if;
+            if reg = 16 then v38_r16_wr <= '1'; end if;
+
+         elsif io_state = st_v38_ind then
+            -- Indirect write: register in R17, auto increment unless bit 7.
+            reg := to_integer(unsigned(v38_reg(17)(2 to 7)));
+            if reg <= 46 and reg /= 17 then
+               v38_reg(reg) <= cd_in;
+            end if;
+            if reg = 16 then v38_r16_wr <= '1'; end if;
+            if v38_reg(17)(0) = '0' then
+               v38_reg(17)(2 to 7) <= std_logic_vector(to_unsigned((reg + 1) mod 64, 6));
+            end if;
+
+         elsif io_state = st_v38_pal and v38_pal_ff = '1' then
+            -- Palette entry written, next one.
+            v38_reg(16)(4 to 7) <= v38_reg(16)(4 to 7) + 1;
+
+         elsif inc_en = '1' and ramaddr = "11111111111111" and v38_carry = '1' then
+            -- The address counter carries into R14 except in the 9918A modes.
+            v38_reg(14)(5 to 7) <= v38_reg(14)(5 to 7) + 1;
+         end if;
+      end if;
       end if;
    end process;
 

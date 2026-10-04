@@ -29,3 +29,8 @@ ocm/incremental_db/
 ocm/output_files/
 ocm/*.log
 ocm/*.qws
+altera/v9938_check/db/
+altera/v9938_check/incremental_db/
+altera/v9938_check/output_files/
+altera/v9938_check/*.log
+altera/v9938_check/*.qws

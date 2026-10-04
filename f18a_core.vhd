@@ -61,6 +61,10 @@ use ieee.numeric_std.all;
 
 
 entity f18a_core is
+   generic (
+      -- VRAM size: 14 = 16 KB (9918A), 17 = 128 KB (needed by the V9938 mode).
+      VRAM_ABITS           : integer := 14
+   );
    port (
       -- Clocks, phase aligned: the core clock is 8 times the pixel clock.
       -- 85.91MHz / 10.74MHz from 21.477MHz (x4 and /2) give 15.70KHz lines
@@ -74,6 +78,8 @@ entity f18a_core is
       csw_n_i              : in  std_logic;
       csr_n_i              : in  std_logic;
       vr8_ignore_i         : in  std_logic;  -- '1' = ignore VR8+ writes when locked (V9938 hosts), '0' = mask like a 9918A
+      v9938_i              : in  std_logic;  -- '1' = V9938 mode (static, needs VRAM_ABITS = 17)
+      mode1_i              : in  std_logic;  -- port address bit 1 (V9938 ports 9Ah / 9Bh), '0' for a 9918A
       int_n_o              : out std_logic;
       cd_i                 : in  std_logic_vector(0 to 7);
       cd_o                 : out std_logic_vector(0 to 7);
@@ -122,6 +128,8 @@ architecture rtl of f18a_core is
    signal y_tick_s         : std_logic;
    signal y_max_s          : std_logic;
    signal frame_pal_s      : std_logic;
+   signal v38_vr_s         : std_logic;                  -- V9938 S#2 VR / HR
+   signal v38_hr_s         : std_logic;
 
    -- Counter signals
    signal in_margin_s      : std_logic;
@@ -218,7 +226,7 @@ architecture rtl of f18a_core is
    -- CPU to VRAM
    signal cpu_din_s        : std_logic_vector(0 to 7);
    signal cpu_we_s         : std_logic;
-   signal cpu_addr_s       : std_logic_vector(0 to 13);
+   signal cpu_addr_s       : std_logic_vector(0 to 16);
    signal cpu_dout_s       : std_logic_vector(0 to 7);
 
    -- Tile to VRAM
@@ -265,12 +273,15 @@ begin
 
    -- Dual-port 16K VRAM
    inst_vram : entity work.f18a_vram
+   generic map (
+      ABITS          => VRAM_ABITS
+   )
    port map (
       clk            => clk_core_i,
    -- CPU Interface
       cpu_din        => cpu_din_s,
       cpu_we         => cpu_we_s,
-      cpu_addr       => cpu_addr_s,
+      cpu_addr       => cpu_addr_s(17 - VRAM_ABITS to 16),
       cpu_dout       => cpu_dout_s,
    -- Tile Interface
       tile_active    => tile_active_s,
@@ -290,6 +301,8 @@ begin
       csw_n          => csw_n_i,
       csr_n          => csr_n_i,
       vr8_ignore     => vr8_ignore_i,
+      v9938          => v9938_i,
+      mode1          => mode1_i,
       cd_i           => cd_i,
       cd_o           => cd_o,
       sp_cf          => sp_cf_s,
@@ -300,6 +313,8 @@ begin
       scanline       => scanline_s,
       vscanln_en     => vscanln_en_s,     -- Virtual scan line enable
       blank          => sl_blank_s,
+      vr             => v38_vr_s,
+      hr             => v38_hr_s,
    -- VRAM Interface
       vdin           => cpu_dout_s,       -- In to CPU from *out* of VRAM
       vwe            => cpu_we_s,
@@ -554,6 +569,10 @@ begin
       blu_o          => override_b_s
    );
 
+
+   -- V9938 S#2: VR outside the active lines, HR outside the active pixels.
+   v38_vr_s <= not y_margin_n_s;
+   v38_hr_s <= in_margin_s and y_margin_n_s;
 
    -- Use TL1 as the background color palette selector.
    bg_color_s <= (tile_ps_s(2 to 3) & textbg_s);

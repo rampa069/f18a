@@ -1,0 +1,28 @@
+# Synthesis check: f18a_core with 128 KB of VRAM (V9938 mode) on the
+# Poseidon FPGA.  All ports are virtual pins.
+set_global_assignment -name FAMILY "Cyclone IV GX"
+set_global_assignment -name DEVICE EP4CGX150DF27I7
+set_global_assignment -name TOP_LEVEL_ENTITY f18a_core
+set_global_assignment -name PROJECT_OUTPUT_DIRECTORY output_files
+set_global_assignment -name VHDL_INPUT_VERSION VHDL_2008
+set_parameter -name VRAM_ABITS 17
+set_global_assignment -name VHDL_FILE ../../f18a_video_pkg.vhd
+set_global_assignment -name VHDL_FILE ../../f18a_version.vhd
+set_global_assignment -name VHDL_FILE ../../f18a_color.vhd
+set_global_assignment -name VHDL_FILE ../../f18a_counters.vhd
+set_global_assignment -name VHDL_FILE ../../f18a_div32x16.vhd
+set_global_assignment -name VHDL_FILE ../../f18a_single_port_ram.vhd
+set_global_assignment -name VHDL_FILE ../../f18a_vram.vhd
+set_global_assignment -name VHDL_FILE ../../f18a_raster.vhd
+set_global_assignment -name VHDL_FILE ../../f18a_gpu.vhd
+set_global_assignment -name VHDL_FILE ../../f18a_cpu.vhd
+set_global_assignment -name VHDL_FILE ../../f18a_tile_linebuf.vhd
+set_global_assignment -name VHDL_FILE ../../f18a_tiles.vhd
+set_global_assignment -name VHDL_FILE ../../f18a_sprites.vhd
+set_global_assignment -name VHDL_FILE ../../f18a_core.vhd
+set_global_assignment -name SDC_FILE f18a_v9938.sdc
+set_instance_assignment -name VIRTUAL_PIN ON -to *
+set_instance_assignment -name VIRTUAL_PIN OFF -to clk_core_i
+set_instance_assignment -name VIRTUAL_PIN OFF -to clk_pix_i
+set_global_assignment -name OPTIMIZATION_MODE "HIGH PERFORMANCE EFFORT"
+set_global_assignment -name TIMING_ANALYZER_MULTICORNER_ANALYSIS ON

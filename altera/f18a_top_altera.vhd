@@ -195,6 +195,8 @@ begin
       csw_n_i        => csw_n_net,
       csr_n_i        => csr_n_net,
       vr8_ignore_i   => '0',            -- 9918A socket: mask VR8+ writes
+      v9938_i        => '0',
+      mode1_i        => '0',
       int_n_o        => int_n_net,
       cd_i           => cd_net,
       cd_o           => cd_out_s,

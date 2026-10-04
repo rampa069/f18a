@@ -47,13 +47,15 @@ class F18A:
     def __init__(self, dut):
         self.dut = dut
 
-    async def reset(self, sprite_max_4=True, pal=False):
+    async def reset(self, sprite_max_4=True, pal=False, v9938=False):
         """Reset the core.  sprite_max_4 selects the real 9918A limit of
         four sprites per line (jumper USR1 off on the F18A board); pal the
-        PAL geometry."""
+        PAL geometry; v9938 the V9938 mode."""
         dut = self.dut
         dut.reset_n_i.value = 0
         dut.mode_i.value = 0
+        dut.mode1_i.value = 0
+        dut.v9938_i.value = 1 if v9938 else 0
         dut.csw_n_i.value = 1
         dut.csr_n_i.value = 1
         dut.cd_i.value = 0
@@ -68,7 +70,8 @@ class F18A:
 
     async def _write(self, mode, value):
         dut = self.dut
-        dut.mode_i.value = mode
+        dut.mode_i.value = mode & 1
+        dut.mode1_i.value = (mode >> 1) & 1
         dut.cd_i.value = value & 0xFF
         await Timer(T_SETUP, "ns")
         dut.csw_n_i.value = 0
@@ -79,7 +82,8 @@ class F18A:
 
     async def _read(self, mode):
         dut = self.dut
-        dut.mode_i.value = mode
+        dut.mode_i.value = mode & 1
+        dut.mode1_i.value = (mode >> 1) & 1
         await Timer(T_SETUP, "ns")
         dut.csr_n_i.value = 0
         await Timer(T_STROBE, "ns")
@@ -103,6 +107,13 @@ class F18A:
 
     async def read_data(self):
         return await self._read(0)
+
+    async def write_port(self, port, value):
+        """Write to port 0-3 (98h-9Bh)."""
+        await self._write(port & 3, value)
+
+    async def read_port(self, port):
+        return await self._read(port & 3)
 
     # -- 9918A programming model --------------------------------------------
 

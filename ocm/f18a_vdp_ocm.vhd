@@ -238,6 +238,8 @@ begin
       csw_n_i        => csw_n_r,
       csr_n_i        => csr_n_r,
       vr8_ignore_i   => '1',
+      v9938_i        => '0',            -- V9938 mode: f18a-5pv.1.12
+      mode1_i        => '0',
       int_n_o        => int_n_s,
       cd_i           => cd_r,
       cd_o           => cd_o_s,

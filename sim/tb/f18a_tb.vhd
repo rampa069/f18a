@@ -19,6 +19,7 @@ entity f18a_tb is
       -- 9918A host interface, driven by cocotb.
       reset_n_i      : in  std_logic;
       mode_i         : in  std_logic;
+      mode1_i        : in  std_logic;
       csw_n_i        : in  std_logic;
       csr_n_i        : in  std_logic;
       int_n_o        : out std_logic;
@@ -28,6 +29,7 @@ entity f18a_tb is
       -- Configuration.
       sprite_max_i   : in  std_logic;
       pal_i          : in  std_logic;
+      v9938_i        : in  std_logic;
 
       -- Video, observed by cocotb.
       clk_core_o     : out std_logic;
@@ -81,6 +83,9 @@ begin
    end process;
 
    inst_core : entity work.f18a_core
+   generic map (
+      VRAM_ABITS     => 17
+   )
    port map (
       clk_core_i     => clk_core,
       clk_pix_i      => clk_pix,
@@ -89,6 +94,8 @@ begin
       csw_n_i        => csw_n_i,
       csr_n_i        => csr_n_i,
       vr8_ignore_i   => '0',
+      v9938_i        => v9938_i,
+      mode1_i        => mode1_i,
       int_n_o        => int_n_o,
       cd_i           => cd_i,
       cd_o           => cd_o,

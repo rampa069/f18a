@@ -54,12 +54,15 @@ use ieee.numeric_std.all;
 use ieee.std_logic_unsigned.all;
 
 entity f18a_vram is
+   generic (
+      ABITS : integer := 14         -- 14 = 16 KB (9918A), 17 = 128 KB (V9938)
+   );
    port (
       clk         : in  std_logic;
 -- CPU Interface
       cpu_din     : in  std_logic_vector(0 to 7);
       cpu_we      : in  std_logic;
-      cpu_addr    : in  std_logic_vector(0 to 13);
+      cpu_addr    : in  std_logic_vector(0 to ABITS - 1);
       cpu_dout    : out std_logic_vector(0 to 7);
 -- TILE Interface
       tile_active : in  std_logic;
@@ -73,21 +76,31 @@ end f18a_vram;
 architecture rtl of f18a_vram is
 
    signal addr_mux : std_logic_vector(0 to 13);
+   signal addr2_s  : std_logic_vector(0 to ABITS - 1);
 
 begin
 
    -- Main RAM
    inst_ram : entity work.f18a_single_port_ram
+      generic map (
+         ABITS => ABITS
+      )
       port map (
          clk   => clk,
          we    => cpu_we,
          addr  => cpu_addr,
-         addr2 => addr_mux,
+         addr2 => addr2_s,
          din   => cpu_din,
          dout  => cpu_dout,
          dout2 => tile_dout
       );
 
    addr_mux <= tile_addr when tile_active = '1' else sprt_addr;
+
+   -- The tiles and sprites address the first 16 KB for now.
+   addr2_s(ABITS - 14 to ABITS - 1) <= addr_mux;
+   gen_hi : if ABITS > 14 generate
+      addr2_s(0 to ABITS - 15) <= (others => '0');
+   end generate;
 
 end rtl;
