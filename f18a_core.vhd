@@ -61,22 +61,15 @@ use ieee.numeric_std.all;
 
 
 entity f18a_core is
-   generic (
-      -- Pixels per raster line in the 15KHz modes, 2 lines per 15KHz line.
-      -- 796 with a 25.000MHz pixel clock, 798 with 25.057MHz (21.477MHz * 7/6)
-      -- for a 63.68..63.69us line like the 9918A.
-      H15_TOTAL            : integer := 796;
-      -- 15KHz output clock: 0 = clk_100m0_i domain, N = clk_out15_i domain
-      -- with N cycles per half pixel (2 with a 21.477MHz clock locked to the
-      -- core clocks, see f18a_video_15k).
-      OUT15_HALFPX_CLKS    : integer := 0
-   );
    port (
-      clk_100m0_i          : in  std_logic;
-      clk_25m0_i           : in  std_logic;
+      -- Clocks, phase aligned: the core clock is 8 times the pixel clock.
+      -- 85.91MHz / 10.74MHz from 21.477MHz (x4 and /2) give 15.70KHz lines
+      -- like the 9918A.
+      clk_core_i           : in  std_logic;
+      clk_pix_i            : in  std_logic;
 
       -- 9918A to Host System Interface
-      reset_n_i            : in  std_logic;  -- Must be active for at least one 25MHz clock cycle
+      reset_n_i            : in  std_logic;  -- Must be active for at least one pixel clock cycle
       mode_i               : in  std_logic;
       csw_n_i              : in  std_logic;
       csr_n_i              : in  std_logic;
@@ -85,29 +78,18 @@ entity f18a_core is
       cd_i                 : in  std_logic_vector(0 to 7);
       cd_o                 : out std_logic_vector(0 to 7);
 
-      -- Video Output
-      blank_o              : out std_logic;
-      hsync_o              : out std_logic;
-      vsync_o              : out std_logic;
+      -- 15KHz RGB Video Output, clk_pix_i domain
+      pal_i                : in  std_logic;  -- '1' = PAL (313 lines, 50Hz), '0' = NTSC (262 lines, 60Hz)
       red_o                : out std_logic_vector(0 to 3);
       grn_o                : out std_logic_vector(0 to 3);
       blu_o                : out std_logic_vector(0 to 3);
-
-      -- 15KHz RGB Video Output, valid when video_15k_i = '1'
-      clk_out15_i          : in  std_logic;  -- 15KHz output clock when OUT15_HALFPX_CLKS > 0
-      video_15k_i          : in  std_logic;  -- '1' = 15KHz timing, the VGA output is then not valid
-      pal_i                : in  std_logic;  -- '1' = PAL (313 lines, 50Hz), '0' = NTSC (262 lines, 60Hz)
-      red15_o              : out std_logic_vector(0 to 3);
-      grn15_o              : out std_logic_vector(0 to 3);
-      blu15_o              : out std_logic_vector(0 to 3);
-      hsync15_n_o          : out std_logic;
-      vsync15_n_o          : out std_logic;
-      csync15_n_o          : out std_logic;
-      blank15_o            : out std_logic;
+      hsync_n_o            : out std_logic;
+      vsync_n_o            : out std_logic;
+      csync_n_o            : out std_logic;  -- composite sync for RGB / SCART
+      blank_o              : out std_logic;  -- '1' outside the picture (not display enable)
 
       -- Feature Selection
       sprite_max_i         : in std_logic;   -- Default sprite max, '0' = 32, '1' = 4
-      scanlines_i          : in std_logic;   -- Simulated scan lines, '0' = no, '1' = yes
 
       -- SPI to GPU
       spi_clk_o            : out std_logic;
@@ -120,24 +102,25 @@ end f18a_core;
 architecture rtl of f18a_core is
 
    -- Output video registers.
-   signal blank_r          : std_logic := '0';
-   signal hsync_r          : std_logic := '0';
-   signal vsync_r          : std_logic := '0';
+   signal blank_r          : std_logic := '1';
+   signal hsync_r          : std_logic := '1';
+   signal vsync_r          : std_logic := '1';
+   signal csync_r          : std_logic := '1';
    signal red_r, red_s     : std_logic_vector(0 to 3) := "0000";
    signal grn_r, grn_s     : std_logic_vector(0 to 3) := "0000";
    signal blu_r, blu_s     : std_logic_vector(0 to 3) := "0000";
 
    -- Video signals
    -- blank here is NOT the same as the soft_blank signal from the CPU I/O
-   signal blank_s          : std_logic;                  -- VGA blanking
+   signal blank_s          : std_logic;                  -- raster blanking
    signal sl_blank_s       : std_logic;                  -- scan line blanking for GPU
-   signal vsync_s          : std_logic;
-   signal hsync_s          : std_logic;
+   signal vsync_s          : std_logic;                  -- active low
+   signal hsync_s          : std_logic;                  -- active low
+   signal csync_s          : std_logic;                  -- active low
    signal raster_x_s       : unsigned(0 to 9);
    signal raster_y_s       : unsigned(0 to 9);
    signal y_tick_s         : std_logic;
    signal y_max_s          : std_logic;
-   signal frame_15k_s      : std_logic;
    signal frame_pal_s      : std_logic;
 
    -- Counter signals
@@ -258,8 +241,6 @@ architecture rtl of f18a_core is
 
    -- Register external inputs.
    signal reset_n_r        : std_logic := '1';
-   signal scanlines_r      : std_logic := '0';
-   signal video_15k_r      : std_logic := '0';
    signal pal_r            : std_logic := '0';
    signal sprite_max_r     : std_logic_vector(0 to 4) := "11111";
 
@@ -267,11 +248,9 @@ begin
 
    -- Register external inputs other than those associated with data (which
    -- are registered in the host interface).
-   process (clk_100m0_i) begin
-   if rising_edge(clk_100m0_i) then
+   process (clk_core_i) begin
+   if rising_edge(clk_core_i) then
       reset_n_r      <= reset_n_i;
-      scanlines_r    <= scanlines_i;
-      video_15k_r    <= video_15k_i;
       pal_r          <= pal_i;
 
       -- Select the power-on / reset default maximum number of sprites per line.
@@ -287,7 +266,7 @@ begin
    -- Dual-port 16K VRAM
    inst_vram : entity work.f18a_vram
    port map (
-      clk            => clk_100m0_i,
+      clk            => clk_core_i,
    -- CPU Interface
       cpu_din        => cpu_din_s,
       cpu_we         => cpu_we_s,
@@ -305,7 +284,7 @@ begin
    -- Host CPU interface
    inst_cpu : entity work.f18a_cpu
    port map (
-      clk            => clk_100m0_i,
+      clk            => clk_core_i,
       rst_n          => reset_n_r,
       mode           => mode_i,
       csw_n          => csw_n_i,
@@ -395,19 +374,15 @@ begin
 
 
    -- Video controller
-   inst_vga_cont : entity work.f18a_vga_cont_640_60
-   generic map (
-      H15_TOTAL      => H15_TOTAL
-   )
+   inst_raster : entity work.f18a_raster
    port map (
-      vga_clk        => clk_25m0_i,
+      vga_clk        => clk_pix_i,
       rst_n          => reset_n_r,
-      timing_15k     => video_15k_r,
-      timing_pal     => pal_r,
-      frame_15k      => frame_15k_s,
+      pal            => pal_r,
       frame_pal      => frame_pal_s,
-      hsync          => hsync_s,
-      vsync          => vsync_s,
+      hsync_n        => hsync_s,
+      vsync_n        => vsync_s,
+      csync_n        => csync_s,
       raster_x       => raster_x_s,
       raster_y       => raster_y_s,
       y_tick         => y_tick_s,
@@ -419,19 +394,18 @@ begin
    -- Video counters
    inst_counters : entity work.f18a_counters
    port map (
-      clk            => clk_100m0_i,
-      vga_clk        => clk_25m0_i,
+      clk            => clk_core_i,
+      vga_clk        => clk_pix_i,
       rst_n          => reset_n_r,
       raster_x       => raster_x_s,
       raster_y       => raster_y_s,
       y_tick         => y_tick_s,
       y_max          => y_max_s,
-      timing_15k     => frame_15k_s,
-      timing_pal     => frame_pal_s,
+      frame_pal      => frame_pal_s,
       sprt_yreal     => sprt_yreal_s,
       gmode          => gmode_s,
       row30          => row30_s,
-      blank_in       => blank_s,          -- VGA blank input
+      blank_in       => blank_s,          -- raster blank input
       sl_blank       => sl_blank_s,       -- Scan line blank output
       intr_en        => intr_en_s,
       sp_cf_en       => sp_cf_en_s,
@@ -451,7 +425,7 @@ begin
    -- Tile layer
    inst_tiles : entity work.f18a_tiles
       port map (
-      clk            => clk_100m0_i,
+      clk            => clk_core_i,
       rst_n          => reset_n_r,
       x_pixel_max    => x_pixel_max_s,
       x_pixel_pos    => x_pixel_pos_s,
@@ -510,7 +484,7 @@ begin
    -- Sprite layer
    inst_sprites : entity work.f18a_sprites
    port map (
-      clk            => clk_100m0_i,
+      clk            => clk_core_i,
       rst_n          => reset_n_r,
       x_sprt_pos     => x_sprt_pos_s,
       y_sprt_pos     => y_sprt_pos_s,
@@ -547,8 +521,8 @@ begin
    -- Color RAM and output pixel selection
    inst_color : entity work.f18a_color
    port map (
-      clk            => clk_100m0_i,
-      vga_clk        => clk_25m0_i,
+      clk            => clk_core_i,
+      vga_clk        => clk_pix_i,
       we1            => col_we_s,
       addr1          => col_addr_cpu_s,
       din            => col_din_s,
@@ -566,9 +540,9 @@ begin
    -- Version ROM and banner generation
    inst_version : entity work.f18a_version
    port map (
-      clk            => clk_100m0_i,
+      clk            => clk_core_i,
       rst_n_i        => reset_n_r,
-      vga_clk        => clk_25m0_i,
+      vga_clk        => clk_pix_i,
       intr_en_i      => intr_en_s,
       raster_x       => raster_x_s,
       raster_y       => raster_y_s,
@@ -587,62 +561,28 @@ begin
    -- soft_blank_s == VR1 blank bit and '0' means blank to background color
    show_bg <= in_margin_s or (not soft_blank_s);
 
-   -- Simulated scan lines every other VGA line when scanlines_i = '1'.
-   -- The odd scan lines have their color value reduced by 50%.
-   red_s <=
-      override_r_s when override_s = '1' else
-      "0" & tile_r_s(0 to 2) when ((scanlines_r = '1' or vscanln_en_s = '1') and raster_y_s(9) = '1') else
-      tile_r_s;
-
-   grn_s <=
-      override_g_s when override_s = '1' else
-      "0" & tile_g_s(0 to 2) when ((scanlines_r = '1' or vscanln_en_s = '1') and raster_y_s(9) = '1') else
-      tile_g_s;
-
-   blu_s <=
-      override_b_s when override_s = '1' else
-      "0" & tile_b_s(0 to 2) when ((scanlines_r = '1' or vscanln_en_s = '1') and raster_y_s(9) = '1') else
-      tile_b_s;
+   -- The simulated scan lines of the original double scan F18A (scanlines
+   -- jumper and VR50 bit) have no effect at 15KHz.
+   red_s <= override_r_s when override_s = '1' else tile_r_s;
+   grn_s <= override_g_s when override_s = '1' else tile_g_s;
+   blu_s <= override_b_s when override_s = '1' else tile_b_s;
 
 
-   -- Register the VGA outputs.
-   process (clk_25m0_i) begin if rising_edge(clk_25m0_i) then
+   -- Register the video outputs.
+   process (clk_pix_i) begin if rising_edge(clk_pix_i) then
       blank_r  <= blank_s;
       hsync_r  <= hsync_s;
       vsync_r  <= vsync_s;
+      csync_r  <= csync_s;
       red_r    <= red_s;
       grn_r    <= grn_s;
       blu_r    <= blu_s;
    end if; end process;
 
-   -- 15KHz RGB output from the same pixels as the VGA output.
-   inst_video_15k : entity work.f18a_video_15k
-   generic map (
-      H15_TOTAL      => H15_TOTAL,
-      OUT_HALFPX_CLKS=> OUT15_HALFPX_CLKS
-   )
-   port map (
-      clk            => clk_100m0_i,
-      vga_clk        => clk_25m0_i,
-      out_clk        => clk_out15_i,
-      frame_pal      => frame_pal_s,
-      raster_x       => raster_x_s,
-      raster_y       => raster_y_s,
-      red_i          => red_s,
-      grn_i          => grn_s,
-      blu_i          => blu_s,
-      red_o          => red15_o,
-      grn_o          => grn15_o,
-      blu_o          => blu15_o,
-      hsync_n_o      => hsync15_n_o,
-      vsync_n_o      => vsync15_n_o,
-      csync_n_o      => csync15_n_o,
-      blank_o        => blank15_o
-   );
-
    blank_o     <= blank_r;
-   hsync_o     <= hsync_r;
-   vsync_o     <= vsync_r;
+   hsync_n_o   <= hsync_r;
+   vsync_n_o   <= vsync_r;
+   csync_n_o   <= csync_r;
    red_o       <= red_r;
    grn_o       <= grn_r;
    blu_o       <= blu_r;

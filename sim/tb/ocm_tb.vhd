@@ -1,7 +1,7 @@
 -- Simulation wrapper for the OCM-PLD VDP replacement (entity vdp in
 -- ocm/f18a_vdp_ocm.vhd), driven by sim/tests/test_ocm.py.
 --
--- Generates CLK21M (84 PLL model units, 21.487MHz) and, while capture_en_i
+-- Generates CLK21M (168 PLL model units, 21.489MHz) and, while capture_en_i
 -- is set, dumps frames sampled on CLK21M like emsx_top does: one sample per
 -- half pixel (every 2 cycles at 15KHz, every cycle at 31KHz) of the
 -- non-blanked area to CAPTURE_DIR/ocm_<n>.ppm.  Color changes that do not
@@ -49,7 +49,7 @@ end ocm_tb;
 
 architecture sim of ocm_tb is
 
-   constant T_UNIT : time := 554 ps;
+   constant T_UNIT : time := 277 ps;
 
    signal clk21m     : std_logic := '0';
    signal r, g, b    : std_logic_vector(5 downto 0);
@@ -60,7 +60,7 @@ architecture sim of ocm_tb is
 
 begin
 
-   clk21m <= not clk21m after 42 * T_UNIT;
+   clk21m <= not clk21m after 84 * T_UNIT;
 
    inst_vdp : entity work.vdp
    port map (

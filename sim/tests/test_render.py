@@ -12,7 +12,7 @@ from cocotb.triggers import FallingEdge
 
 import scenes
 from f18a_driver import CAPTURE_DIR, F18A, load_png, mask_banner, save_png
-from tms9918_model import render_frame
+from tms9918_model import render_frame15
 
 GOLDEN_DIR = Path(__file__).resolve().parent.parent / "golden"
 UPDATE_GOLDEN = os.environ.get("F18A_UPDATE_GOLDEN") == "1"
@@ -27,22 +27,24 @@ def describe_diff(got, exp):
             f"first at ({xs[0]},{ys[0]}) got {got[ys[0], xs[0]]} expected {exp[ys[0], xs[0]]}")
 
 
-async def run_scene(dut, name):
+async def run_scene(dut, name, standard="ntsc"):
     vram, regs = scenes.SCENES[name]()
     f = F18A(dut)
-    await f.reset(sprite_max_4=True)
+    await f.reset(sprite_max_4=True, pal=standard == "pal")
     await f.set_reg(1, 0x80)                   # blank while loading
     await f.load_vram(vram)
     dut._log.info("%s: VRAM loaded", name)
     await f.set_regs(regs)
     await f.read_status()
-    await FallingEdge(dut.vsync_o)             # let a full frame settle the status
+    await FallingEdge(dut.vsync_n_o)         # let a full frame settle the status
     await f.read_status()
 
     got = mask_banner(await f.capture_frame())
     status = await f.read_status()
     dut._log.info("%s: frame captured, status %02x", name, status)
-    exp_frame, exp_status = render_frame(vram, regs, max_per_line=4)
+    exp_frame, exp_status = render_frame15(vram, regs, standard, max_per_line=4)
+    if standard != "ntsc":
+        name = f"{name}_{standard}"
     exp = mask_banner(exp_frame)
 
     save_png(got, CAPTURE_DIR / f"{name}.png")
@@ -71,12 +73,17 @@ KNOWN_BUGS = {
 }
 
 
-def make_test(name):
+def make_test(name, standard="ntsc"):
     async def test(dut):
-        await run_scene(dut, name)
-    test.__name__ = test.__qualname__ = f"render_{name}"
+        await run_scene(dut, name, standard)
+    suffix = "" if standard == "ntsc" else "_pal"
+    test.__name__ = test.__qualname__ = f"render_{name}{suffix}"
     return cocotb.test(expect_fail=name in KNOWN_BUGS)(test)
 
 
 for _name in scenes.SCENES:
     globals()[f"render_{_name}"] = make_test(_name)
+
+# The PAL geometry only moves the picture: a graphics and a text scene.
+for _name in ("graphics1", "text1"):
+    globals()[f"render_{_name}_pal"] = make_test(_name, "pal")

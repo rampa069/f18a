@@ -1,7 +1,7 @@
 // F18A clock PLL for Cyclone IV E / Cyclone 10 LP.
 //
-//    clk_100m0 = 50MHz * 2
-//    clk_25m0  = 50MHz / 2, phase aligned with clk_100m0
+//    clk_core = 50MHz * 12 / 7 = 85.71MHz
+//    clk_pix  = 50MHz *  3 / 14 = 10.71MHz, phase aligned with clk_core
 //
 // Written in Verilog because instantiating altpll from VHDL through
 // altera_mf_components makes Quartus 21.1 pass Stratix default generics and
@@ -9,8 +9,8 @@
 
 module f18a_pll (
    input  wire clk_50m0,
-   output wire clk_100m0,
-   output wire clk_25m0,
+   output wire clk_core,
+   output wire clk_pix,
    output wire locked
 );
 
@@ -24,12 +24,12 @@ module f18a_pll (
       .compensate_clock       ("CLK0"),
       .inclk0_input_frequency (20000),     // 50MHz, in ps
       .bandwidth_type         ("AUTO"),
-      .clk0_multiply_by       (2),         // 100MHz
-      .clk0_divide_by         (1),
+      .clk0_multiply_by       (12),        // 85.71MHz
+      .clk0_divide_by         (7),
       .clk0_duty_cycle        (50),
       .clk0_phase_shift       ("0"),
-      .clk1_multiply_by       (1),         // 25MHz
-      .clk1_divide_by         (2),
+      .clk1_multiply_by       (3),         // 10.71MHz
+      .clk1_divide_by         (14),
       .clk1_duty_cycle        (50),
       .clk1_phase_shift       ("0"),
       .port_clk0              ("PORT_USED"),
@@ -42,7 +42,7 @@ module f18a_pll (
       .locked (locked)
    );
 
-   assign clk_100m0 = clk[0];
-   assign clk_25m0  = clk[1];
+   assign clk_core = clk[0];
+   assign clk_pix  = clk[1];
 
 endmodule

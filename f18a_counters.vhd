@@ -44,8 +44,8 @@
 --   V1.4 Mar 20, 2013 .. Apr 26, 2013
 --   V1.3 Jul 26, 2012, Release firmware
 
--- Counters for tile and sprite address generation.  Tightly bound to the VGA
--- raster display parameters.
+-- Counters for tile and sprite address generation.  Tightly bound to the
+-- raster parameters (f18a_raster, f18a_video_pkg).
 
 
 library ieee;
@@ -64,12 +64,11 @@ entity f18a_counters is
       raster_y       : in unsigned(0 to 9);
       y_tick         : in std_logic;
       y_max          : in std_logic;
-      timing_15k     : in std_logic;            -- raster geometry in use (frame_15k)
-      timing_pal     : in std_logic;            -- (frame_pal), see f18a_video_pkg
+      frame_pal      : in std_logic;            -- PAL geometry in use, see f18a_video_pkg
       sprt_yreal     : in std_logic;            -- 1 to use real sprite location, 0 for original off-by-one
       gmode          : in unsigned(0 to 3);
       row30          : in std_logic;            -- 1 when 30 rows
-      blank_in       : in std_logic;            -- VGA blanking signal in
+      blank_in       : in std_logic;            -- raster blanking signal in
       sl_blank       : out std_logic;           -- scan line blanking signal out
       intr_en        : out std_logic;           -- interrupt tick
       sp_cf_en       : out std_logic;           -- sprite collision flag tick
@@ -87,41 +86,28 @@ end f18a_counters;
 
 architecture rtl of f18a_counters is
 
-   -- Start and end points to center the display on the VGA screen.
-   -- Anything outside of this area will be border color.
+   -- Start and end points of the active area in raster pixels (half VDP
+   -- pixels).  Anything outside of this area will be border color.
    -- Values are inclusive to the active area.
 
-   -- 0 to 63 (left 64px margin), 64 to 575 (512px), 576 to 639 (right 64px margin)
-   -- 0 to 79 (left 80px margin), 80 to 559 (480px), 560 to 639 (right 80px margin)
+   -- 64 to 575 (256 VDP pixels), text mode 80 to 559 (240 VDP pixels)
    constant XSTART   : integer := 64;     -- X start
    constant XSTART2  : integer := 80;     -- X start for text mode
    constant XEND     : integer := 575;    -- X end
    constant XEND2    : integer := 559;    -- X end for text mode
 
-   -- 32/40 x 24 tiles = 256/240 x 192 2x-pixels = 512 x 384 1x-pixels
+   -- 32/40 x 24 tiles = 256/240 x 192 VDP pixels = 512/480 x 192 raster pixels
    -- 0 to 47 (top 48px margin), 48 to 431 (384px), 432 to 479 (bottom 48px margin)
-   -- VGA values shown; the vertical positions depend on the raster
-   -- geometry in use, see f18a_video_pkg and the geometry signals below.
-   constant YPRESCAN : integer := 47;
-   constant YSTART   : integer := 48;
-   constant YEND     : integer := 431;
+   -- The vertical positions depend on the geometry in use (NTSC / PAL),
+   -- see f18a_video_pkg and the geometry signals below.
 
-   constant SL_RESET1: integer := 46;
-   constant SL_RESET2: integer := 523;
-
-   -- 32 x 30 tiles = 256 x 240 2x-pixels = 512 x 480 1x-pixels
-   -- No top or bottom margin
-   -- YPRESCAN2 *MUST* match VMAX from the VGA controller
-   constant YPRESCAN2: integer := 524;
-   constant YSTART2  : integer := 0;
-   constant YEND2    : integer := 479;
 
    -- Vertical positions for the raster geometry in use.
-   signal ystart_s   : unsigned(0 to 9);  -- 192/212 line area
+   signal ystart_s   : unsigned(0 to 9);  -- 192 line area
    signal yend_s     : unsigned(0 to 9);
    signal ystart2_s  : unsigned(0 to 9);  -- 240 line (30 row) area
    signal yend2_s    : unsigned(0 to 9);
-   signal sl_reset1_s: unsigned(0 to 9);  -- 2 rasters before each area
+   signal sl_reset1_s: unsigned(0 to 9);  -- 2 lines before each area
    signal sl_reset2_s: unsigned(0 to 9);
 
    -- Margin indicators
@@ -163,10 +149,10 @@ architecture rtl of f18a_counters is
    signal x256 : unsigned(0 to 7);
 
 
-   -- Y 1x-pixels
-   signal y_count : unsigned(0 to 8) := (others => '0');  -- 0 to 480 == 9-bits
+   -- Y lines, counted from 2 lines before the area (first count is 1).
+   signal y_count : unsigned(0 to 8) := (others => '0');
 
-   -- Y 2x-pixels
+   -- Next VDP line (y_count - 1).
    signal y_half : unsigned(0 to 7);
 
    -- Scan line counter
@@ -237,28 +223,30 @@ begin
       end if;
    end process;
 
-   -- Divide the 1x line by 2 to make a 2x line.
-   -- Vertical geometry.  Each area starts 2 rasters after its scan line
-   -- reset; the 30 row area may start on raster 0, then the reset is on the
-   -- second to last raster of the previous frame.
-   process (timing_15k, timing_pal)
+   -- Vertical geometry.  Each area starts 2 lines after its scan line
+   -- reset; when the 30 row area starts on line 0 or 1, the reset is at the
+   -- end of the previous frame.
+   process (frame_pal)
       variable g : video_geom_t;
    begin
-      g := video_geom(timing_15k, timing_pal);
+      g := video_geom(frame_pal);
       ystart_s    <= to_unsigned(g.ystart, 10);
-      yend_s      <= to_unsigned(g.ystart + 383, 10);
+      yend_s      <= to_unsigned(g.ystart + 191, 10);
       ystart2_s   <= to_unsigned(g.ystart30, 10);
-      yend2_s     <= to_unsigned(g.ystart30 + 479, 10);
+      yend2_s     <= to_unsigned(g.ystart30 + 239, 10);
       sl_reset1_s <= to_unsigned(g.ystart - 2, 10);
       if g.ystart30 >= 2 then
          sl_reset2_s <= to_unsigned(g.ystart30 - 2, 10);
       else
-         sl_reset2_s <= to_unsigned(g.vmax + g.ystart30 - 1, 10);
+         sl_reset2_s <= to_unsigned(g.vtotal + g.ystart30 - 2, 10);
       end if;
    end process;
 
-   y_half <= y_count(0 to 7);
-   y_next <= '0' & y_half when gmode < 10 else y_count;
+   -- One raster line per VDP line.  The tiles and sprites prepare the next
+   -- line during the current one: on the line before the area y_count is 1
+   -- and line 0 is prepared.
+   y_half <= resize(y_count - 1, 8);
+   y_next <= '0' & y_half;
 
    -- Horizontal scan line output.
    scanline_reset <= '1' when
@@ -277,11 +265,11 @@ begin
       end if;
    end if; end process;
 
-   scanline <= scanline_cnt(0 to 7);
+   -- Current scan line, 1 on the first line of the area (as the original
+   -- double scan F18A reported it).
+   scanline <= resize(scanline_cnt - 1, 8);
 
-   -- The blank signal is on the odd VGA scan line, 1 scan line after
-   -- the scan line value changed.
-   sl_blank <= scanline_cnt(8) and blank_in;
+   sl_blank <= blank_in;
 
    -- Sprites are always a 0 to 191 grid and 1 line behind the raster.
    -- Sprites are not affected by the scrolling.
@@ -358,24 +346,23 @@ begin
    --               _____                   _____
    -- tick ________|     |_________________|     |_
 
-   -- Convert the vga_clk into logic so it can be used
-   -- to make a 100MHz tick.
+   -- Convert the vga_clk (pixel clock) into logic so it can be used
+   -- to make a core clock tick.
    process (vga_clk) begin
       if rising_edge(vga_clk) then
-         -- This toggles at 12.5MHz, so both edges will be detected
-         -- to restore the 25MHz VGA clk.
+         -- This toggles at half the pixel clock, so both edges will be
+         -- detected to restore the pixel clock.
          vga_clk_logic <= not vga_clk_logic;
       end if;
    end process;
 
-   -- Some events like sprite collisions must only be reported at the
-   -- virtual scan line, not the doubled VGA scan line rate.
+   -- Sprite collisions are reported once per pixel.
    process (clk) begin if rising_edge(clk) then
       vga_clk_last <= vga_clk_logic;
 
-      -- Make a 10ns tick once per VGA clock on even scan lines.
+      -- Make a one clock tick once per pixel clock.
       -- Transitions of the vga_clk_logic happen for every rising edge of vga_clk.
-      sprt_cf_ff <= (vga_clk_logic xor vga_clk_last) and (not scanline_cnt(8));
+      sprt_cf_ff <= vga_clk_logic xor vga_clk_last;
    end if; end process;
 
    sp_cf_en <= sprt_cf_ff;

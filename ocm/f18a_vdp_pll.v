@@ -1,15 +1,15 @@
 // PLL for the F18A OCM-PLD wrapper (ocm/f18a_vdp_ocm.vhd).
 //
-//    clk_100m = 21.477MHz * 14 / 3 = 100.23MHz
-//    clk_25m  = 21.477MHz *  7 / 6 =  25.06MHz, phase aligned with clk_100m
+//    clk_core = 21.477MHz * 4 = 85.91MHz
+//    clk_pix  = 21.477MHz / 2 = 10.74MHz, phase aligned with clk_core
 //
 // Set intended_device_family to the FPGA of the target core if Quartus
 // complains (the altpll parameters are the same for Cyclone I to 10 LP).
 
 module f18a_vdp_pll (
    input  wire clk_21m,
-   output wire clk_100m,
-   output wire clk_25m,
+   output wire clk_core,
+   output wire clk_pix,
    output wire locked
 );
 
@@ -23,12 +23,12 @@ module f18a_vdp_pll (
       .compensate_clock       ("CLK0"),
       .inclk0_input_frequency (46561),     // 21.477MHz, in ps
       .bandwidth_type         ("AUTO"),
-      .clk0_multiply_by       (14),        // 100.23MHz
-      .clk0_divide_by         (3),
+      .clk0_multiply_by       (4),         // 85.91MHz
+      .clk0_divide_by         (1),
       .clk0_duty_cycle        (50),
       .clk0_phase_shift       ("0"),
-      .clk1_multiply_by       (7),         // 25.06MHz
-      .clk1_divide_by         (6),
+      .clk1_multiply_by       (1),         // 10.74MHz
+      .clk1_divide_by         (2),
       .clk1_duty_cycle        (50),
       .clk1_phase_shift       ("0"),
       .port_clk0              ("PORT_USED"),
@@ -41,7 +41,7 @@ module f18a_vdp_pll (
       .locked (locked)
    );
 
-   assign clk_100m = clk[0];
-   assign clk_25m  = clk[1];
+   assign clk_core = clk[0];
+   assign clk_pix  = clk[1];
 
 endmodule

@@ -16,8 +16,7 @@ set_global_assignment -name VHDL_FILE ../f18a_counters.vhd
 set_global_assignment -name VHDL_FILE ../f18a_div32x16.vhd
 set_global_assignment -name VHDL_FILE ../f18a_single_port_ram.vhd
 set_global_assignment -name VHDL_FILE ../f18a_vram.vhd
-set_global_assignment -name VHDL_FILE ../f18a_vga_cont_640_60.vhd
-set_global_assignment -name VHDL_FILE ../f18a_video_15k.vhd
+set_global_assignment -name VHDL_FILE ../f18a_raster.vhd
 set_global_assignment -name VHDL_FILE ../f18a_gpu.vhd
 set_global_assignment -name VHDL_FILE ../f18a_cpu.vhd
 set_global_assignment -name VHDL_FILE ../f18a_tile_linebuf.vhd
@@ -42,11 +41,8 @@ set_instance_assignment -name WEAK_PULL_UP_RESISTOR ON -to usr4_net
 set_instance_assignment -name WEAK_PULL_UP_RESISTOR ON -to pal_net
 
 set_global_assignment -name OPTIMIZATION_MODE "HIGH PERFORMANCE EFFORT"
-# The 100MHz paths from RAM outputs to the GPU have little margin (f18a-zus).
 set_global_assignment -name PHYSICAL_SYNTHESIS_COMBO_LOGIC ON
 set_global_assignment -name PHYSICAL_SYNTHESIS_REGISTER_DUPLICATION ON
 set_global_assignment -name PHYSICAL_SYNTHESIS_REGISTER_RETIMING ON
 set_global_assignment -name PHYSICAL_SYNTHESIS_EFFORT EXTRA
-# Fitter seed with the best slack in a sweep (seeds 2-5 all met timing).
-set_global_assignment -name SEED 2
 set_global_assignment -name TIMING_ANALYZER_MULTICORNER_ANALYSIS ON

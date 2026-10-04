@@ -13,7 +13,7 @@ from f18a_driver import BANNER_H, BANNER_W, X15_FIRST, load_ppm, save_png
 from tms9918_model import render_frame15
 
 CAPTURE_DIR = Path(os.environ.get("F18A_CAPTURE_DIR", "."))
-CLK_NS = 84 * 0.554             # CLK21M period of the testbench (21.487MHz)
+CLK_NS = 168 * 0.277            # CLK21M period of the testbench (21.489MHz)
 LINE_CLKS = 1368                # 15KHz line, like the V9938
 BUS_CLKS = 12                   # CLK21M cycles per I/O access (~560ns)
 
@@ -101,9 +101,9 @@ def to6(frame4):
     return (frame4.astype(np.uint16) << 2 | frame4 >> 2).astype(np.uint8)
 
 
-def mask_banner(frame):
+def mask_banner(frame, line_repeat=1):
     frame = frame.copy()
-    frame[:(BANNER_H + 1) // 2, :BANNER_W - X15_FIRST] = 0
+    frame[:BANNER_H * line_repeat, :BANNER_W - X15_FIRST] = 0
     return frame
 
 
@@ -207,17 +207,14 @@ async def render(dut, name, dispreso, standard="ntsc"):
         await bus.set_reg(reg, value)
     await FallingEdge(dut.pvideovs_n_o)
     errors = int(dut.phase_err_o.value)
-    got = mask_banner(await bus.capture())
+    got = await bus.capture()
     assert int(dut.phase_err_o.value) == errors, "pixels not aligned to half pixel boundaries"
     # The F18A default is 32 sprites per line in the wrapper.
     exp = render_frame15(vram, regs, standard, max_per_line=32)[0]
     if dispreso:
         exp = np.repeat(exp, 2, axis=0)
-    exp = mask_banner(to6(exp)) if not dispreso else to6(exp)
-    if dispreso:
-        exp[:BANNER_H + 1, :BANNER_W - X15_FIRST] = 0
-        got = got.copy()
-        got[:BANNER_H + 1, :BANNER_W - X15_FIRST] = 0
+    exp = mask_banner(to6(exp), 1 + dispreso)
+    got = mask_banner(got, 1 + dispreso)
     save_png(got >> 2, CAPTURE_DIR / f"ocm_{name}_{dispreso}.png")
     save_png(exp >> 2, CAPTURE_DIR / f"ocm_{name}_{dispreso}_model.png")
     assert got.shape == exp.shape and np.array_equal(got, exp), diff_msg(name, got, exp)

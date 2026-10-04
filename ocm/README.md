@@ -14,9 +14,9 @@ In the core's Quartus project, replace the `src/video/vdp*.vhd` files with:
 
 ```
 f18a_video_pkg.vhd  f18a_version.vhd  f18a_color.vhd  f18a_counters.vhd
-f18a_div32x16.vhd  f18a_single_port_ram.vhd  f18a_vram.vhd
-f18a_vga_cont_640_60.vhd  f18a_video_15k.vhd  f18a_gpu.vhd  f18a_cpu.vhd
-f18a_tile_linebuf.vhd  f18a_tiles.vhd  f18a_sprites.vhd  f18a_core.vhd
+f18a_div32x16.vhd  f18a_single_port_ram.vhd  f18a_vram.vhd  f18a_raster.vhd
+f18a_gpu.vhd  f18a_cpu.vhd  f18a_tile_linebuf.vhd  f18a_tiles.vhd
+f18a_sprites.vhd  f18a_core.vhd
 ocm/f18a_vdp_pll.v  ocm/f18a_vdp_ocm.vhd
 ```
 
@@ -28,7 +28,7 @@ virtual pins).
 
 | Ports | Behavior |
 |---|---|
-| `CLK21M`, `RESET` | 21.477 MHz system clock; a PLL makes the F18A clocks (100.23 / 25.06 MHz) |
+| `CLK21M`, `RESET` | 21.477 MHz system clock; a PLL makes the F18A clocks (85.91 MHz core = x4, 10.74 MHz pixel = /2) |
 | `REQ`, `ACK`, `WRT`, `ADR`, `DBO`, `DBI` | I/O 98h (data) and 99h (control / status) as a TMS9918A with the F18A extensions. 9Ah / 9Bh writes are ignored, reads return FFh. `ACK` follows `REQ` one cycle later like the original. `DBI` is valid 5 cycles (230 ns) after `REQ`; OCM samples it much later (420 ns at 3.58 MHz, 6 wait states in turbo modes) |
 | `INT_N` | Frame interrupt, synchronized to `CLK21M` |
 | `PRAM*` | Unused: the VRAM is inside the F18A. `PRAMWE_N` / `PRAMOE_N` stay high |

@@ -15,7 +15,6 @@ MODULES = [
     ("test_host_io", runner.TOPLEVEL),
     ("test_timing", runner.TOPLEVEL),
     ("test_render", runner.TOPLEVEL),
-    ("test_video15k", runner.TOPLEVEL),
     ("test_ocm", runner.OCM_TOPLEVEL),
 ]
 

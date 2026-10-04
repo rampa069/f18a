@@ -14,8 +14,7 @@ set_global_assignment -name VHDL_FILE ../f18a_counters.vhd
 set_global_assignment -name VHDL_FILE ../f18a_div32x16.vhd
 set_global_assignment -name VHDL_FILE ../f18a_single_port_ram.vhd
 set_global_assignment -name VHDL_FILE ../f18a_vram.vhd
-set_global_assignment -name VHDL_FILE ../f18a_vga_cont_640_60.vhd
-set_global_assignment -name VHDL_FILE ../f18a_video_15k.vhd
+set_global_assignment -name VHDL_FILE ../f18a_raster.vhd
 set_global_assignment -name VHDL_FILE ../f18a_gpu.vhd
 set_global_assignment -name VHDL_FILE ../f18a_cpu.vhd
 set_global_assignment -name VHDL_FILE ../f18a_tile_linebuf.vhd

@@ -65,9 +65,9 @@
 -- These inputs are accepted and ignored: VDPSPEEDMODE, RATIOMODE,
 -- CENTERYJK_R25_N, LEGACY_VGA, VGA_INT_FIELD, SPMAXSPR, VDP_ID, OFFSET_Y.
 --
--- Clocks: the F18A runs at 100.23MHz and 25.06MHz from a PLL on CLK21M
--- (21.477MHz * 14/3 and * 7/6), so its 15KHz line is exactly 1368 CLK21M
--- cycles like the V9938.
+-- Clocks: the F18A runs at 85.91MHz (core) and 10.74MHz (pixel) from a PLL
+-- on CLK21M (21.477MHz * 4 and / 2), so its 15KHz line is exactly 1368
+-- CLK21M cycles like the V9938 and its outputs are aligned to CLK21M.
 
 library ieee;
 use ieee.std_logic_1164.all;
@@ -132,15 +132,15 @@ architecture rtl of vdp is
    component f18a_vdp_pll is
       port (
          clk_21m        : in  std_logic;
-         clk_100m       : out std_logic;
-         clk_25m        : out std_logic;
+         clk_core       : out std_logic;
+         clk_pix        : out std_logic;
          locked         : out std_logic
       );
    end component;
 
    -- F18A clocks.
-   signal clk_100m_s    : std_logic;
-   signal clk_25m_s     : std_logic;
+   signal clk_core_s    : std_logic;
+   signal clk_pix_s     : std_logic;
    signal pll_locked_s  : std_logic;
    signal f18a_rst_n_s  : std_logic;
 
@@ -219,8 +219,8 @@ begin
    pll_inst : f18a_vdp_pll
    port map (
       clk_21m        => clk21m,
-      clk_100m       => clk_100m_s,
-      clk_25m        => clk_25m_s,
+      clk_core       => clk_core_s,
+      clk_pix        => clk_pix_s,
       locked         => pll_locked_s
    );
 
@@ -230,13 +230,9 @@ begin
    pal_s <= r9_pal_r when ntsc_pal_type = '1' else forced_v_mode;
 
    inst_f18a : entity work.f18a_core
-   generic map (
-      H15_TOTAL      => 798,            -- 2 * 798 * 39.91ns = 1368 CLK21M cycles
-      OUT15_HALFPX_CLKS => 2            -- 15KHz output in the CLK21M domain
-   )
    port map (
-      clk_100m0_i    => clk_100m_s,
-      clk_25m0_i     => clk_25m_s,
+      clk_core_i     => clk_core_s,
+      clk_pix_i      => clk_pix_s,
       reset_n_i      => f18a_rst_n_s,
       mode_i         => mode_r,
       csw_n_i        => csw_n_r,
@@ -245,24 +241,15 @@ begin
       int_n_o        => int_n_s,
       cd_i           => cd_r,
       cd_o           => cd_o_s,
-      blank_o        => open,
-      hsync_o        => open,
-      vsync_o        => open,
-      red_o          => open,
-      grn_o          => open,
-      blu_o          => open,
-      clk_out15_i    => clk21m,
-      video_15k_i    => '1',
       pal_i          => pal_s,
-      red15_o        => red15_s,
-      grn15_o        => grn15_s,
-      blu15_o        => blu15_s,
-      hsync15_n_o    => hs15_n_s,
-      vsync15_n_o    => vs15_n_s,
-      csync15_n_o    => cs15_n_s,
-      blank15_o      => blank15_s,
+      red_o          => red15_s,
+      grn_o          => grn15_s,
+      blu_o          => blu15_s,
+      hsync_n_o      => hs15_n_s,
+      vsync_n_o      => vs15_n_s,
+      csync_n_o      => cs15_n_s,
+      blank_o        => blank15_s,
       sprite_max_i   => '0',            -- 32 sprites per line, F18A default
-      scanlines_i    => '0',
       spi_clk_o      => open,
       spi_cs_o       => open,
       spi_mosi_o     => open,
@@ -386,8 +373,9 @@ begin
    -- Video
    --
 
-   -- 15KHz video, already in the CLK21M domain: the F18A 15KHz output stage
-   -- runs on CLK21M with exactly two cycles per half pixel (1368 per line).
+   -- 15KHz video into the CLK21M domain.  The F18A pixel clock is CLK21M / 2
+   -- from the PLL, so every pixel (half a VDP pixel) lasts exactly two
+   -- CLK21M cycles (1368 per line).
    process (clk21m) begin
       if rising_edge(clk21m) then
          rgb15_r   <= red15_s & grn15_s & blu15_s;

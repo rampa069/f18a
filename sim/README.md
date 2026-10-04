@@ -13,8 +13,8 @@ make -C sim setup         # creates ../.venv with cocotb, pytest, numpy, pillow
 ## Running
 
 ```bash
-make -C sim test                        # everything (~21 min)
-make -C sim test T=host_io              # one module: host_io, timing, render, video15k, ocm
+make -C sim test                        # everything (~12 min)
+make -C sim test T=host_io              # one module: host_io, timing, render, ocm
 F18A_UPDATE_GOLDEN=1 make -C sim test   # regenerate sim/golden/*.png
 ```
 
@@ -25,14 +25,13 @@ Logs, results and captured frames go to `sim/sim_build/`
 
 | File | Purpose |
 |---|---|
-| `tb/f18a_tb.vhd` | Wrapper: 100/25 MHz clocks, dumps VGA frames (`capture_en_i`) and 15 kHz frames (`capture15_en_i`) to PPM files |
+| `tb/f18a_tb.vhd` | Wrapper: 85.91 / 10.74 MHz clocks, dumps 15 kHz frames (`capture_en_i`) to PPM files |
 | `f18a_driver.py` | Host bus driver (9918A MODE/CSW/CSR cycles), VRAM/register helpers, frame capture |
 | `tms9918_model.py` | Reference TMS9918A renderer (G1, G2, MC, Text 1, sprites, status flags) |
 | `scenes.py` | Deterministic VRAM images and register sets |
 | `tests/test_host_io.py` | VRAM read/write, auto-increment, read-ahead, control port latch |
-| `tests/test_timing.py` | VGA sync timing, active area, frame interrupt and status F flag |
-| `tests/test_render.py` | Renders each scene, compares against the model and the golden PNGs |
-| `tests/test_video15k.py` | 15 kHz output, NTSC and PAL: sync timing, composite sync, interrupt rate, image vs. model |
+| `tests/test_timing.py` | NTSC / PAL sync timing, picture area, composite sync, frame interrupt and status F flag |
+| `tests/test_render.py` | Renders each scene (NTSC, two also PAL), compares against the model and the golden PNGs |
 | `tb/ocm_tb.vhd`, `tb/f18a_vdp_pll_sim.vhd` | OCM-PLD VDP wrapper testbench (CLK21M, frames sampled on CLK21M) and PLL model |
 | `tests/test_ocm.py` | OCM-PLD wrapper: dot clocks, bus, MSX2 register writes, PAL/NTSC selection, 15/31 kHz line timing and image |
 
@@ -47,9 +46,9 @@ Known deviations from the 9918A are listed in `KNOWN_BUGS` in
 
 ## Notes
 
-- The VDP area appears at VGA x=65 (not 64) because of the one-pixel output
-  pipeline delay, and the active area is 640x480 with 794-pixel lines
-  (31.76 us, 59.97 Hz frames).
+- Frames are the 15 kHz picture, one sample per pixel clock (half a VDP
+  pixel): 568 x 243 (NTSC) or 568 x 294 (PAL).  The VDP area starts at x=26
+  (13 border pixels) because of the one pixel output pipeline delay.
 - The default sprite limit is driven to four per line (`sprite_max_i = 1`)
   so sprites behave like a real 9918A.
 - Some registers had no power-up value and stayed `'U'` in simulation; they

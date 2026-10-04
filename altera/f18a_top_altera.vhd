@@ -41,8 +41,9 @@
 -- the Cyclone 10 LP.
 --
 -- Clocking (50MHz board oscillator):
---    clk_100m0 = 50MHz * 2   F18A core, CPU interface, GPU
---    clk_25m0  = 50MHz / 2   VGA pixel clock, phase aligned with clk_100m0
+--    clk_core = 50MHz * 12/7 = 85.71MHz   F18A core, CPU interface, GPU
+--    clk_pix  = 50MHz * 3/14 = 10.71MHz   pixel clock (15.66KHz lines),
+--                                         phase aligned with clk_core
 
 library ieee;
 use ieee.std_logic_1164.all;
@@ -78,7 +79,7 @@ entity f18a_top_altera is
 
       -- User header for feature selection
       usr1_net       : in std_logic;   -- Sprite max
-      usr2_net       : in std_logic;   -- Simulated scan lines
+      usr2_net       : in std_logic;   -- Unused (simulated scan lines at 31KHz on the original F18A)
       usr3_net       : in std_logic;   -- CPU CLK out pin selection
       usr4_net       : in std_logic;   -- CPU CLK out enable
 
@@ -95,16 +96,16 @@ architecture rtl of f18a_top_altera is
    component f18a_pll is
       port (
          clk_50m0       : in  std_logic;
-         clk_100m0      : out std_logic;
-         clk_25m0       : out std_logic;
+         clk_core       : out std_logic;
+         clk_pix        : out std_logic;
          locked         : out std_logic
       );
    end component;
 
    -- Main clock generation.
    signal pll_locked_s     : std_logic;
-   signal clk_100m0_s      : std_logic;
-   signal clk_25m0_s       : std_logic;
+   signal clk_core_s      : std_logic;
+   signal clk_pix_s       : std_logic;
 
 
    -- Power-On Reset generation.
@@ -123,8 +124,6 @@ architecture rtl of f18a_top_altera is
    -- Output routing.
    signal cd_out_s         : std_logic_vector(0 to 7);
    signal pal_s            : std_logic;
-   signal hsync15_s, vsync15_s, csync15_s, blank15_s : std_logic;
-   signal red15_s, grn15_s, blu15_s : std_logic_vector(0 to 3);
 
    -- Output GROM and CPU clock generation.
    signal cpuclk_r         : std_logic := '0';
@@ -141,8 +140,8 @@ begin
    pll_inst : f18a_pll
    port map (
       clk_50m0       => clk_50m0_net,
-      clk_100m0      => clk_100m0_s,
-      clk_25m0       => clk_25m0_s,
+      clk_core       => clk_core_s,
+      clk_pix        => clk_pix_s,
       locked         => pll_locked_s
    );
 
@@ -153,7 +152,7 @@ begin
 
    -- Synchronize the real input reset signal.  The core is also held in
    -- reset until the PLL is locked.
-   process (clk_100m0_s) begin if rising_edge(clk_100m0_s) then
+   process (clk_core_s) begin if rising_edge(clk_core_s) then
       reset_n_i_r1 <= reset_n_net and pll_locked_s;
       reset_n_i_r  <= reset_n_i_r1;
    end if; end process;
@@ -167,7 +166,7 @@ begin
    -- The count is 0..7 to be long enough for the vga_clk (25MHz) to cycle
    -- at least once, ensuring any resets based on the vga_clk have time to
    -- complete.
-   process (clk_100m0_s) begin if rising_edge(clk_100m0_s) then
+   process (clk_core_s) begin if rising_edge(clk_core_s) then
       if reset_cnt_r = "111" then
          reset_por_r <= '1';
       else
@@ -187,8 +186,8 @@ begin
 
    inst_f18a : entity work.f18a_core
    port map (
-      clk_100m0_i    => clk_100m0_s,
-      clk_25m0_i     => clk_25m0_s,
+      clk_core_i     => clk_core_s,
+      clk_pix_i      => clk_pix_s,
 
       -- 9918A to Host System Interface
       reset_n_i      => reset_n_r,
@@ -201,28 +200,17 @@ begin
       cd_o           => cd_out_s,
 
       -- Video Output
-      blank_o        => open,
-      hsync_o        => open,
-      vsync_o        => open,
-      red_o          => open,
-      grn_o          => open,
-      blu_o          => open,
-
-      -- 15KHz Video Output
-      clk_out15_i    => '0',
-      video_15k_i    => '1',
       pal_i          => pal_s,
-      red15_o        => red15_s,
-      grn15_o        => grn15_s,
-      blu15_o        => blu15_s,
-      hsync15_n_o    => hsync15_s,
-      vsync15_n_o    => vsync15_s,
-      csync15_n_o    => csync15_s,
-      blank15_o      => blank15_s,
+      red_o          => red_net,
+      grn_o          => grn_net,
+      blu_o          => blu_net,
+      hsync_n_o      => hsync_net,
+      vsync_n_o      => vsync_net,
+      csync_n_o      => csync_net,
+      blank_o        => blank_net,
 
       -- Feature Selection
       sprite_max_i   => usr1_net,      -- Default sprite max, '0' = 32, '1' = 4
-      scanlines_i    => usr2_net,      -- Simulated scan lines, '0' = no, '1' = yes
 
       -- SPI to GPU
       spi_clk_o      => spi_clk_net,
@@ -235,14 +223,6 @@ begin
    -- PAL / NTSC jumper, read by the core at the end of each frame.
    pal_s <= not pal_net;
 
-   hsync_net <= hsync15_s;
-   vsync_net <= vsync15_s;
-   csync_net <= csync15_s;
-   blank_net <= blank15_s;
-   red_net   <= red15_s;
-   grn_net   <= grn15_s;
-   blu_net   <= blu15_s;
-
 
    -- Host interface data bus tristate.
    cd_net <= cd_out_s when csr_n_net = '0' else (others => 'Z');
@@ -250,23 +230,23 @@ begin
 
    -- GROM and CPU clock generation, see f18a_top.vhd.
    --
-   -- 100MHz / 3.5795MHz =  27.93, use  28 (3.5714MHz)
-   -- 100MHz / 447.44KHz = 223.49, use 224 (446.428KHz)
+   -- 85.71MHz / 3.5795MHz = 23.95, use  24 (3.5714MHz)
+   -- 85.71MHz / 447.44KHz = 191.6, use 192 (446.43KHz)
 
    ext_clock_gen :
-   process (clk_100m0_s)
-   begin if rising_edge(clk_100m0_s) then
+   process (clk_core_s)
+   begin if rising_edge(clk_core_s) then
 
-      -- 224 / 2 = 112, count 0..111 to generate 50% GROMCLK period.
-      if gromdiv_r = 111 then
+      -- 192 / 2 = 96, count 0..95 to generate 50% GROMCLK period.
+      if gromdiv_r = 95 then
          gromclk_r <= not gromclk_r;
          gromdiv_r <= (others => '0');
       else
          gromdiv_r <= gromdiv_r + 1;
       end if;
 
-      -- 28 / 2 = 14, count 0..13 to generate 50% CPUCLK period.
-      if cpudiv_r = 13 then
+      -- 24 / 2 = 12, count 0..11 to generate 50% CPUCLK period.
+      if cpudiv_r = 11 then
          cpuclk_r <= not cpuclk_r;
          cpudiv_r <= (others => '0');
       else

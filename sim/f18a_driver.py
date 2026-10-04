@@ -2,8 +2,12 @@
 
 The host interface mimics a TMS9918A bus: MODE selects the port (0 = data /
 VRAM, 1 = control / status), CSW and CSR are active-low strobes.  The F18A
-synchronizes the strobes to its 100MHz clock, so the bus is driven with
+synchronizes the strobes to its core clock, so the bus is driven with
 nanosecond timing (asynchronous to the core clocks) like a real host.
+
+Frames are the 15KHz picture (border + active area), one sample per pixel
+clock (half a VDP pixel): 568 samples per line, 243 (NTSC) or 294 (PAL)
+lines.
 """
 
 import os
@@ -13,27 +17,24 @@ import numpy as np
 from cocotb.triggers import ClockCycles, FallingEdge, ReadOnly, Timer
 from PIL import Image
 
-# Video geometry of the 640x480 VGA output.
-VGA_W, VGA_H = 640, 480
-# The 256x192 VDP area is shown pixel doubled starting at this VGA position.
-# The counters start the area at x=64 (XSTART), but the pixel pipeline delays
-# the output by one VGA pixel, so it appears at x=65.
-ACTIVE_X, ACTIVE_Y = 65, 48
-# Text mode (240 pixels wide) is centered (XSTART2 = 80, plus the same delay).
-TEXT_X = 81
-# 15KHz output: VGA pixels 39..606 of each raster line pair, i.e. 13 border
-# pixels, 256 active and 15 border pixels as half pixels.
+# Pixel clock period of the testbench (21.477MHz / 2), ns.
+PIX_NS = 8 * 2 * 5.820
+
+# Picture window: raster pixels 39..606 (f18a_video_pkg).  The VDP area
+# starts at raster_x 64 (XSTART), shown one pixel later by the output
+# pipeline: picture x = 26 (13 VDP border pixels).  Text mode starts at 80.
 X15_FIRST, W15 = 39, 568
-# 15KHz vertical layout: (top border, bottom border, total lines).
+ACTIVE_X, TEXT_X = 65, 81
+# Vertical layout per standard: (top border, bottom border, total lines).
 GEOM15 = {"ntsc": (27, 24, 262), "pal": (51, 51, 313)}
 
 # Power-on version banner in the top-left corner of the border (raster
 # coordinates < XMAX/YMAX in f18a_version.vhd), shown for 384 frames.
 BANNER_W, BANNER_H = 58, 14
 
-# Bus timing (ns).  The 9918A minimum strobe is 186ns; the F18A needs at
-# least two 100MHz clocks of sync, so these give plenty of margin while
-# keeping the simulation fast.
+# Bus timing (ns).  The 9918A minimum strobe is 186ns; the F18A needs a few
+# core clocks of sync, so these give plenty of margin while keeping the
+# simulation fast.
 T_SETUP = 30
 T_STROBE = 200
 T_HOLD = 30
@@ -46,11 +47,10 @@ class F18A:
     def __init__(self, dut):
         self.dut = dut
 
-    async def reset(self, sprite_max_4=True, scanlines=False, video_15k=False, pal=False):
+    async def reset(self, sprite_max_4=True, pal=False):
         """Reset the core.  sprite_max_4 selects the real 9918A limit of
-        four sprites per line (jumper USR1 off on the F18A board).
-        video_15k selects the 15KHz timing (applied from the next frame),
-        pal the PAL 15KHz geometry."""
+        four sprites per line (jumper USR1 off on the F18A board); pal the
+        PAL geometry."""
         dut = self.dut
         dut.reset_n_i.value = 0
         dut.mode_i.value = 0
@@ -58,11 +58,8 @@ class F18A:
         dut.csr_n_i.value = 1
         dut.cd_i.value = 0
         dut.sprite_max_i.value = 1 if sprite_max_4 else 0
-        dut.scanlines_i.value = 1 if scanlines else 0
-        dut.capture_en_i.value = 0
-        dut.capture15_en_i.value = 0
-        dut.video_15k_i.value = 1 if video_15k else 0
         dut.pal_i.value = 1 if pal else 0
+        dut.capture_en_i.value = 0
         await Timer(1, "us")
         dut.reset_n_i.value = 1
         await Timer(1, "us")
@@ -141,39 +138,24 @@ class F18A:
     # -- Video ---------------------------------------------------------------
 
     async def capture_frame(self):
-        """Capture the next complete frame, returned as an (480, 640, 3)
+        """Capture the next complete frame, returned as an (lines, 568, 3)
         array of 4-bit RGB values."""
         dut = self.dut
         # Callers often start right at a vsync edge, which the testbench sees
         # one clock later: enable the capture after it so only one frame is
         # armed.
-        await ClockCycles(dut.clk_25m0_o, 4)
+        await ClockCycles(dut.clk_pix_o, 4)
         start = int(dut.frames_o.value)
         dut.capture_en_i.value = 1
         # Wait for the capture to be armed at the next vsync, then disarm so
         # only one frame is written.  The capture process samples the vsync
-        # edge one 25MHz clock later, so keep the enable until it has.
-        await FallingEdge(dut.vsync_o)
-        await ClockCycles(dut.clk_25m0_o, 2)
+        # edge one pixel clock later, so keep the enable until it has.
+        await FallingEdge(dut.vsync_n_o)
+        await ClockCycles(dut.clk_pix_o, 2)
         dut.capture_en_i.value = 0
         while int(dut.frames_o.value) == start:
             await dut.frames_o.value_change
         return load_ppm(CAPTURE_DIR / f"frame_{start}.ppm")
-
-
-    async def capture_frame15(self):
-        """Capture the next complete 15KHz frame, returned as an
-        (lines, 568, 3) array of 4-bit RGB values."""
-        dut = self.dut
-        await ClockCycles(dut.clk_100m0_o, 16)
-        start = int(dut.frames15_o.value)
-        dut.capture15_en_i.value = 1
-        await FallingEdge(dut.vsync15_n_o)
-        await ClockCycles(dut.clk_100m0_o, 2)
-        dut.capture15_en_i.value = 0
-        while int(dut.frames15_o.value) == start:
-            await dut.frames15_o.value_change
-        return load_ppm(CAPTURE_DIR / f"frame15_{start}.ppm")
 
 
 def load_ppm(path):
@@ -199,5 +181,5 @@ def load_png(path):
 def mask_banner(frame):
     """Blank the power-on version banner so frames can be compared."""
     frame = frame.copy()
-    frame[:BANNER_H, :BANNER_W] = 0
+    frame[:BANNER_H, :BANNER_W - X15_FIRST] = 0
     return frame

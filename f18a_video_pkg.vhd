@@ -34,68 +34,70 @@
 -- ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
 -- POSSIBILITY OF SUCH DAMAGE.
 
--- Video timing geometry of every supported output standard, in one place.
+-- Video timing geometry, in one place.
 --
--- The core always renders with a double scan raster: every VDP line takes
--- two raster lines of 794..796 pixels at 25MHz (31.8us).  The VGA output
--- shows it directly; for 15KHz output each pair of raster lines becomes one
--- 15KHz line (f18a_video_15k), so the 15KHz modes need an even number of
--- raster lines and use the 9918A / 9929A vertical layout:
+-- The F18A generates 15KHz video like the 9918A (NTSC) and 9929A (PAL):
+-- one raster line per VDP line, 684 raster pixels per line, each raster
+-- pixel is half a VDP pixel (a 10.74MHz pixel clock, 63.69us lines).
 --
---                    VGA          NTSC 15KHz       PAL 15KHz
---   lines            525          262 (524)        313 (626)
---   top border       48 (24*2)    27 (54)          51 (102)
---   active           192 (384)    192 (384)        192 (384)
---   bottom border    48           24 (48)          51 (102)
---   blank+sync       45           3 + 3 + 13       3 + 3 + 13
---   frame rate       59.97Hz      59.94Hz          50.17Hz
+-- Horizontal (raster pixels, raster_x):
 --
--- (raster lines in parentheses).  The 15KHz horizontal layout is fixed in
--- f18a_video_15k.
+--    0 ..  38   back porch (the 9918A color burst is here)
+--   39 ..  63   left border    (13 VDP pixels with the 1 pixel output delay)
+--   64 .. 575   active area    (256 VDP pixels, text modes 80 .. 559)
+--  576 .. 606   right border   (15 VDP pixels)
+--  607 .. 622   front porch    (8 VDP pixels)
+--  623 .. 674   hsync          (26 VDP pixels)
+--  675 .. 683   back porch
+--
+-- Vertical (lines):
+--                    NTSC 9918A      PAL 9929A
+--   top border       27              51
+--   active           192             192
+--   bottom border    24              51
+--   blank            3               3
+--   vsync            3               3
+--   blank            13              13
+--   total            262 (59.9Hz)    313 (50.2Hz)
 
 library ieee;
 use ieee.std_logic_1164.all;
 
 package f18a_video_pkg is
 
+   -- Horizontal geometry, raster pixels.
+   constant H_TOTAL        : integer := 684;
+   constant H_VISIBLE_FIRST: integer := 39;     -- first raster_x with picture
+   constant H_VISIBLE_END  : integer := 607;    -- first raster_x after the picture
+   constant H_SYNC_FIRST   : integer := 623;
+   constant H_SYNC_END     : integer := 675;
+
    type video_geom_t is record
-      hmax     : integer;  -- last raster x (line is hmax + 1 pixels; the 15KHz
-                           -- geometries use the H15_TOTAL generic of f18a_core)
-      vmax     : integer;  -- last raster y (frame is vmax + 1 lines)
-      vsize    : integer;  -- raster lines with picture (border + active)
-      vfp      : integer;  -- VGA vsync start line
-      vsp      : integer;  -- VGA vsync end line
-      ystart   : integer;  -- first raster line of the 192-line VDP area
-      ystart30 : integer;  -- first raster line of the 240-line (30 row) area
+      vtotal   : integer;  -- lines per frame
+      vsize    : integer;  -- lines with picture (border + active)
+      ystart   : integer;  -- first line of the 192-line VDP area
+      ystart30 : integer;  -- first line of the 240-line (30 row) area
    end record;
 
-   constant GEOM_VGA  : video_geom_t := (
-      hmax => 793, vmax => 524, vsize => 480, vfp => 490, vsp => 492,
-      ystart => 48, ystart30 => 0);
-
    constant GEOM_NTSC : video_geom_t := (
-      hmax => 795, vmax => 523, vsize => 486, vfp => 496, vsp => 498,
-      ystart => 54, ystart30 => 2);
+      vtotal => 262, vsize => 243, ystart => 27, ystart30 => 1);
 
    constant GEOM_PAL  : video_geom_t := (
-      hmax => 795, vmax => 625, vsize => 588, vfp => 598, vsp => 600,
-      ystart => 102, ystart30 => 54);
+      vtotal => 313, vsize => 294, ystart => 51, ystart30 => 27);
 
-   -- 15KHz vertical layout derived from the raster geometry.
-   constant V15_BLANK_BEFORE_SYNC : integer := 3;
-   constant V15_SYNC_LINES        : integer := 3;
+   -- Vertical sync, lines after the picture.
+   constant V_BLANK_BEFORE_SYNC : integer := 3;
+   constant V_SYNC_LINES        : integer := 3;
 
-   function video_geom(video_15k : std_logic; pal : std_logic) return video_geom_t;
+   function video_geom(pal : std_logic) return video_geom_t;
 
 end package;
 
 package body f18a_video_pkg is
 
-   function video_geom(video_15k : std_logic; pal : std_logic) return video_geom_t is
+   function video_geom(pal : std_logic) return video_geom_t is
    begin
-      if video_15k = '0' then
-         return GEOM_VGA;
-      elsif pal = '1' then
+      if pal = '1' then
          return GEOM_PAL;
       else
          return GEOM_NTSC;

@@ -1,19 +1,20 @@
 # F18A on Altera / Intel Cyclone IV E
 
 Reference Quartus project for a stand-alone F18A on a Cyclone IV E
-(EP4CE22F17C8), equivalent to `f18a_top.vhd` + `f18a_brd_v13.ucf` for the
-original Xilinx Spartan-3E board.
+(EP4CE22F17C8).  It replaces the original Xilinx Spartan-3E board top level
+(`f18a_top.vhd` / `f18a_brd_v13.ucf`, removed; see the git history).
 
 | File | Purpose |
 |---|---|
 | `f18a_top_altera.vhd` | Top level: PLL, power-on reset, host bus tristate, CPUCLK/GROMCLK outputs, 15 kHz video with PAL/NTSC selection |
-| `f18a_pll.v` | altpll: 50 MHz in, 100 MHz + 25 MHz (phase aligned) out |
+| `f18a_pll.v` | altpll: 50 MHz in, 85.71 MHz core + 10.71 MHz pixel clock (phase aligned) out |
 | `f18a.qpf`, `f18a.qsf` | Project, sources, device, I/O defaults |
 | `f18a.sdc` | Clocks and false paths for the asynchronous host bus and video outputs |
 
 The core itself (`../f18a_*.vhd`) is vendor independent.  To use the F18A
-inside a larger SoC, instantiate `f18a_core` directly with a 100 MHz clock and
-a phase-aligned 25 MHz clock, as this top level does.
+inside a larger SoC, instantiate `f18a_core` directly with a core clock and
+a phase-aligned pixel clock of 1/8 of it (85.91 / 10.74 MHz from 21.477 MHz
+give exactly the 9918A line rate), as this top level does.
 
 ## Building
 
@@ -26,12 +27,8 @@ quartus_sh --flow compile f18a
 
 ## Results (Quartus 21.1.1 Lite, EP4CE22F17C8)
 
-- 4,383 LEs (20 %), 2,009 registers, 24 M9K (166,400 bits), 5 multipliers, 1 PLL
-- Timing met in all corners; worst setup slack 0.112 ns on the 100 MHz clock
-  (Fmax 101.1 MHz at slow 85 °C).  The critical paths go from RAM outputs
-  (VRAM to GPU, tile line buffer to palette RAM) without an intermediate
-  register, so there is little margin when the core shares the device with
-  other logic.
+See the commit history for the current figures; the 85.71 MHz core clock
+leaves more timing margin than the original 100 MHz design.
 
 ## Video output
 
@@ -41,16 +38,20 @@ ground) selects the standard; it takes effect at the next frame.
 
 | `pal_net` | Standard | Lines | Borders top / bottom | Frame rate |
 |---|---|---|---|---|
-| open | NTSC | 262 | 27 / 24 | 59.94 Hz |
-| jumper | PAL | 313 | 51 / 51 | 50.17 Hz |
+| open | NTSC | 262 | 27 / 24 | 59.8 Hz |
+| jumper | PAL | 313 | 51 / 51 | 50.0 Hz |
 
-Lines are 63.68 us (15.70 kHz) with 13 + 256 + 15 visible pixels.  Outputs:
+With the 50 MHz oscillator lines are 63.84 us (15.66 kHz), 13 + 256 + 15
+visible pixels.  Outputs:
 4-bit RGB, `hsync_net`, `vsync_net` and composite `csync_net` (all syncs
 active low), and `blank_net` ('1' outside the picture, the inverse of display
-enable, e.g. for MiSTer).  The core also keeps the original 640x480 VGA output
-(`video_15k_i = '0'`), not used by this top level.
+enable, e.g. for MiSTer).  There is no VGA output: boards use their own scandoubler.
 
 ## Notes
+
+- The core clock is 85.71 MHz (85.91 MHz in the OCM wrapper) instead of the
+  original 100 MHz, so the GPU and the F18A 10 ns counter run about 14 %
+  slower.
 
 - There are no pin assignments: add them for a specific board.  The host bus
   of a real 9918A socket is 5 V and needs level shifters; the FPGA side is

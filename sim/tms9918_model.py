@@ -1,14 +1,14 @@
 """Reference model of the TMS9918A display, used to check the F18A output.
 
-Renders a VRAM image and the eight 9918A registers to the 640x480 VGA frame
-the F18A produces (pixel doubled 256x192 area, backdrop colored border), and
+Renders a VRAM image and the eight 9918A registers to the 15KHz picture the
+F18A produces (border and 256x192 area, two samples per VDP pixel), and
 computes the sprite status flags.  Only the original 9918A behavior is
 modeled; F18A extensions are expected to be disabled (locked VDP).
 """
 
 import numpy as np
 
-from f18a_driver import ACTIVE_X, ACTIVE_Y, GEOM15, TEXT_X, VGA_H, VGA_W, W15, X15_FIRST
+from f18a_driver import ACTIVE_X, GEOM15, TEXT_X, W15, X15_FIRST
 
 # Default F18A palette 0 (f18a_color.vhd), 4-bit R, G, B.
 PALETTE = [
@@ -190,27 +190,4 @@ def render_frame15(vram, regs, standard="ntsc", max_per_line=4):
     if img is not None:
         x = ACTIVE_X - X15_FIRST + x0
         frame[top: top + 192, x: x + img.shape[1] * 2] = PALETTE_RGB[np.repeat(img, 2, axis=1)]
-    return frame, status
-
-
-def render_frame(vram, regs, max_per_line=4):
-    """Render the full 640x480 4-bit RGB VGA frame."""
-    vram = bytes(vram)
-    backdrop = regs[7] & 0x0F
-    frame = np.empty((VGA_H, VGA_W, 3), dtype=np.uint8)
-    frame[:, :] = PALETTE_RGB[backdrop]
-    if not regs[1] & 0x40:              # BL = 0, display blanked
-        return frame, Status()
-
-    tiles = render_tiles(vram, regs)
-    sprites, status = render_sprites(vram, regs, max_per_line)
-    if mode_of(regs) == MODE_TEXT:
-        img = tiles
-        x0 = TEXT_X
-    else:
-        img = np.where(sprites != 0, sprites, tiles)
-        x0 = ACTIVE_X
-    img = np.where(img == 0, backdrop, img)
-    big = np.repeat(np.repeat(img, 2, axis=0), 2, axis=1)
-    frame[ACTIVE_Y: ACTIVE_Y + big.shape[0], x0: x0 + big.shape[1]] = PALETTE_RGB[big]
     return frame, status
