@@ -176,6 +176,7 @@ architecture rtl of f18a_core is
    signal x_pixel_max_s    : unsigned(0 to 8);
    signal x_pixel_pos_s    : unsigned(0 to 8);
    signal x_sprt_pos_s     : unsigned(0 to 7);
+   signal sp_xact_s        : std_logic;                  -- raster in the 256 pixel area
    signal y_next_s         : unsigned(0 to 8);
    signal y_sprt_pos_s     : unsigned(0 to 7);
    signal prescan_start_s  : std_logic;
@@ -358,6 +359,8 @@ begin
       sp_5th         => sp_5th_s,
       intr_en        => intr_en_s,
       sp_cf_en       => sp_cf_en_s,
+      sp_x           => x_sprt_pos_s,
+      sp_xact        => sp_xact_s,
       scanline       => scanline_s,
       vscanln_en     => vscanln_en_s,     -- Virtual scan line enable
       blank          => sl_blank_s,
@@ -678,6 +681,7 @@ begin
       half_r <= raster_x_s(9);
    end if; end process;
    r9_pal_o <= v38_r9_s(6);
+   sp_xact_s <= '1' when raster_x_s >= 64 and raster_x_s < 64 + 512 else '0';
 
    process (clk_core_i) begin if rising_edge(clk_core_i) then
       rx_core_r <= raster_x_s;

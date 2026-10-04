@@ -185,3 +185,22 @@ def test_cmd(seq):
         errors.append(f"VRAM differs at {len(diff)} addresses: " + ", ".join(
             f"{a:05x} openMSX {o_vram[a]:02x} model {model.vram[a]:02x}" for a in diff[:12]))
     assert not errors, f"{seq}:\n" + "\n".join(errors[:40])
+
+
+# Scenes with sprites for the collision check.  Each runs in its own openMSX
+# session: the Z80 program that clears the collision state only runs for the
+# first scene of a session.
+COLLISION_SCENES = ["g1", "g2", "g3", "g4_mag_tp", "g5_212", "g7_212"]
+
+
+@pytest.mark.parametrize("name", COLLISION_SCENES)
+def test_collision(name):
+    """Sprite collision: S#0 C and the coordinates in S#3-S#6."""
+    import openmsx_oracle as oracle
+    vram, regs, pal = v9938_scenes.SCENES[name]()
+    o = oracle.run_scenes([oracle.Scene(name, vram, regs, pal)], decode=False)[name].status
+    model = vm.V9938(vram, regs, pal)
+    model.render()
+    m = [model.status[k] for k in range(7)]
+    assert (o[0] & 0x20, o[3:7]) == (m[0] & 0x20, m[3:7]), \
+        f"{name}: collision S#0 {o[0]:02x} S#3-6 {o[3:7]}, model S#0 {m[0]:02x} S#3-6 {m[3:7]}"

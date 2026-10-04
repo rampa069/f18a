@@ -198,8 +198,44 @@ class V9938:
             value = self.status[n] if n < len(self.status) else 0xFF
         if n == 0:
             self.status[0] &= 0x1F
+        if n == 5:
+            self._set_collision(0, 0)       # reading S#5 clears the coordinates
         self._cmd_regs()
         return value
+
+    def _set_collision(self, x, y):
+        """S#3-S#6: collision X and Y (openMSX SpriteChecker collisionX / Y)."""
+        self.status[3] = x & 0xFF
+        self.status[4] = ((x >> 8) & 0xFF) | 0xFE
+        self.status[5] = y & 0xFF
+        self.status[6] = ((y >> 8) & 0xFF) | 0xFC
+
+    def _collisions(self, sprites, n_lines):
+        """Sprite collision (openMSX SpriteChecker::findCollision1 / 2): the
+        first display line where two colliding sprites have a pixel at the
+        same x in the screen sets C and, unless C was set already, the
+        coordinates: X = the lowest such x + 12, Y = the line + 7 (openMSX:
+        the line the sprites are checked at, one before they show, + 8).  Color
+        0 sprites only collide with TP; in mode 2 not with CC or IC set."""
+        if self.status[0] & 0x20:
+            return
+        can0 = not self.transparent()
+        for line in range(n_lines):
+            spr = [(sx, bits) for sx, bits, attr in sprites.get(line, [])
+                   if (can0 or attr & 0x0F) and not (self.sprite_mode == 2 and attr & 0x60)]
+            xs = set()
+            hit = None
+            for sx, bits in spr:
+                for p in range(32):
+                    x = sx + p
+                    if bits & (0x80000000 >> p) and 0 <= x < 256:
+                        if x in xs and (hit is None or x < hit):
+                            hit = x
+                        xs.add(x)
+            if hit is not None:
+                self.status[0] |= 0x20
+                self._set_collision(hit + 12, line + 7)
+                return
 
     def write_palette(self, value):
         if self.palette_latch is None:
@@ -270,6 +306,7 @@ class V9938:
         n = self.lines
         img = np.zeros((n, 512), dtype=np.uint16)
         sprites = self._sprites(n)
+        self._collisions(sprites, n)
         for line in range(n):
             img[line] = self._render_line(line, sprites.get(line, []))
         return img

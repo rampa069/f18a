@@ -50,6 +50,7 @@ async def load(f, vram, regs, pal, vram_size=0x10000):
     """Load a scene in V9938 mode: palette (9Ah), VRAM, registers."""
     await f.reset(v9938=True)
     await f.set_reg(1, 0x00)                   # blank while loading
+    await f.set_reg(8, regs[8])                # VR before the VRAM (VR = 0 maps it differently)
     await f.set_reg(16, 0)
     for r, g, b in pal or []:
         await f.write_port(2, (r << 4) | b)
@@ -248,3 +249,63 @@ async def interlace(dut):
             assert abs((t - a) / LINE_NS - 262) < 0.01, "not interlaced: 262 lines"
         a = t
     await f.set_reg(15, 0)
+
+
+COLLISION_SCENES = ["g1", "g3", "g4_mag_tp", "g5_212", "g7_212"]   # also in DISPLAY_SCENES
+
+
+async def collision_scene(dut, name):
+    """S#0 C and the collision coordinates S#3-S#6 of a full frame, against
+    the model (checked against openMSX in test_model_openmsx)."""
+    vram, regs, pal = v9938_scenes.SCENES[name]()
+    if name not in v9938_scenes.DISPLAY_SCENES:
+        raise ValueError(name)
+    f = F18A(dut)
+    await load(f, vram, regs, pal, vram_size=len(vram) if regs[0] & 0x08 and regs[0] & 0x02 else 0x10000)
+    await FallingEdge(dut.vsync_n_o)
+    for n in (5, 0):                            # clear the coordinates, then C
+        await f.set_reg(15, n)
+        await f.read_status()
+    await FallingEdge(dut.vsync_n_o)
+    await FallingEdge(dut.vsync_n_o)
+    got = []
+    for n in (3, 4, 5, 6, 0):
+        await f.set_reg(15, n)
+        got.append(await f.read_status())
+    await f.set_reg(15, 0)
+    model = vm.V9938(vram, regs, pal)
+    model.render()
+    exp = [model.status[n] for n in (3, 4, 5, 6)] + [model.status[0]]
+    assert got[:4] == exp[:4] and got[4] & 0x20 == exp[4] & 0x20, \
+        f"{name}: S#3-6, S#0 RTL {[hex(v) for v in got]} model {[hex(v) for v in exp]}"
+
+
+def make_collision(name):
+    async def test(dut):
+        await collision_scene(dut, name)
+    test.__name__ = test.__qualname__ = f"collision_{name}"
+    return cocotb.test()(test)
+
+
+for _name in COLLISION_SCENES:
+    globals()[f"collision_{_name}"] = make_collision(_name)
+
+
+@cocotb.test()
+async def blank_no_sprite_status(dut):
+    """BL = 0: sprites are not checked, so S#0 gets no C, 5S or 9S (openMSX)."""
+    vram, regs, pal = v9938_scenes.SCENES["g1"]()      # has a collision and 5 sprites on a line
+    f = F18A(dut)
+    await load(f, vram, regs, pal)
+    await f.set_reg(1, regs[1] & ~0x40)                 # display off
+    await FallingEdge(dut.vsync_n_o)
+    await f.read_status()                               # clear S#0
+    await FallingEdge(dut.vsync_n_o)
+    await FallingEdge(dut.vsync_n_o)
+    s0 = await f.read_status()
+    assert s0 & 0x60 == 0, f"S#0 {s0:02x} with BL = 0"
+    await f.set_reg(1, regs[1])                          # display on: they come back
+    await FallingEdge(dut.vsync_n_o)
+    await FallingEdge(dut.vsync_n_o)
+    s0 = await f.read_status()
+    assert s0 & 0x20, f"S#0 {s0:02x} with BL = 1"

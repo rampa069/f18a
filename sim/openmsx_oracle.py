@@ -54,15 +54,21 @@ class Shot:
     raw: np.ndarray                 # RGB screenshot
     active: np.ndarray              # (lines, 512) color codes, -1 if unknown
     border: int                     # border color code, -1 if unknown
+    status: list = None             # S#0-S#9 when the screenshot was taken
 
 
 def _tcl_scene(i, scene, vram_file):
     regs = list(scene.regs) + [0] * (47 - len(scene.regs))
     lines = [f"proc scene{i} {{}} {{",
-             "  debug break",
-             "  poke 0xE000 0xF3",          # DI
-             "  poke 0xE001 0x76",          # HALT
-             "  reg pc 0xE000",
+             "  debug break"]
+    # Park the Z80: DI; read S#5 (clears the collision coordinates) and S#0
+    # (clears the collision flag) so this scene starts clean; then loop
+    # (JR $, not HALT: a halted Z80 would not run the next scene's code).
+    park = [0xF3, 0x3E, 0x05, 0xD3, 0x99, 0x3E, 0x8F, 0xD3, 0x99, 0xDB, 0x99,
+            0xAF, 0xD3, 0x99, 0x3E, 0x8F, 0xD3, 0x99, 0xDB, 0x99, 0x18, 0xFE]
+    for k, b in enumerate(park):
+        lines.append(f"  poke {0xE000 + k} {b}")
+    lines += ["  reg pc 0xE000",
              "  vdpreg 16 0"]
     for r, g, b in scene.palette:
         lines.append(f"  debug write ioports 0x9a {(r << 4) | b}")
@@ -75,7 +81,9 @@ def _tcl_scene(i, scene, vram_file):
         lines.append(f"  vdpreg {r} {v & 0xFF}")
     lines.append("  debug cont")
     lines.append(f"  after time 0.5 {{ screenshot -raw -doublesize -prefix /work/{scene.name}__; "
-                 f"{'scene' + str(i + 1)} }}")
+                 f"set f [open /work/{scene.name}.status w]; "
+                 f"for {{set k 0}} {{$k < 10}} {{incr k}} {{ puts $f [debug read {{VDP status regs}} $k] }}; "
+                 f"close $f; {'scene' + str(i + 1)} }}")
     lines.append("}")
     return "\n".join(lines)
 
@@ -98,11 +106,13 @@ def _run(scenes, workdir):
            f"'xvfb-run -a -s \"-screen 0 1024x768x24\" timeout 300 "
            f"openmsx -machine {machine} -script /work/run.tcl >/work/openmsx.log 2>&1'")
     subprocess.run(["ssh", "-o", "BatchMode=yes", HOST, cmd], check=True)
-    subprocess.run(["scp", "-q", f"{HOST}:{remote}/*.png", f"{workdir}/"], check=True)
+    subprocess.run(["scp", "-q", f"{HOST}:{remote}/*.png", f"{HOST}:{remote}/*.status", f"{workdir}/"],
+                   check=True)
     shots = {}
     for s in scenes:
         png = next(workdir.glob(f"{s.name}__*.png"))
-        shots[s.name] = np.asarray(Image.open(png).convert("RGB")).astype(np.int32)
+        status = [int(v) for v in (workdir / f"{s.name}.status").read_text().split()]
+        shots[s.name] = (np.asarray(Image.open(png).convert("RGB")).astype(np.int32), status)
     return shots
 
 
@@ -182,12 +192,12 @@ def run_scenes(scenes, decode=True):
         raws = _run(scenes, Path(tmp))
     shots = {}
     for s in scenes:
-        raw = raws[s.name]
+        raw, status = raws[s.name]
         if decode:
             active, border = _decode(raw, s)
         else:
             active, border = None, -1
-        shots[s.name] = Shot(raw=raw, active=active, border=border)
+        shots[s.name] = Shot(raw=raw, active=active, border=border, status=status)
     return shots
 
 

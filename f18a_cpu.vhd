@@ -70,6 +70,8 @@ entity f18a_cpu is
       sp_5th      : in  std_logic_vector(0 to 4);
       intr_en     : in  std_logic;                    -- interrupt tick
       sp_cf_en    : in  std_logic;
+      sp_x        : in  unsigned(0 to 7) := (others => '0');  -- x of the sprite pixel being shown (collision X)
+      sp_xact     : in  std_logic := '1';             -- '1' while the 256 pixel area is shown
       scanline    : in  unsigned(0 to 7);
       vscanln_en  : out std_logic;                    -- virtual scan line enable
       blank       : in  std_logic;                    -- '1' when blanking (horz and vert) for GPU
@@ -184,6 +186,10 @@ architecture rtl of f18a_cpu is
    constant VMAJOR   : std_logic_vector(0 to 3) := X"1";
    constant VMINOR   : std_logic_vector(0 to 3) := X"9";
    constant IDENT    : std_logic_vector(0 to 2) := "111"; -- >Ex
+   -- Collision coordinates: openMSX X = x + 12, Y = display line + 7.  The
+   -- values here include the pipeline offsets of sp_x and scanline.
+   constant COLL_X_ADD : unsigned(0 to 8) := to_unsigned(12, 9);
+   constant COLL_Y_ADD : unsigned(0 to 9) := to_unsigned(6, 10);
 
    -- Synchronization for csw and csr.
    signal csw_sync : std_logic_vector(0 to 1);
@@ -322,6 +328,10 @@ architecture rtl of f18a_cpu is
    signal sp_c_ff       : std_logic := '0';
    signal sp_5s_ff      : std_logic := '0';
    signal sp_5th_reg    : std_logic_vector(0 to 4) := "00000";
+   -- V9938 collision coordinates (S#3-S#6), openMSX SpriteChecker: set by
+   -- the first collision while C = 0, cleared by reading S#5.
+   signal coll_x_r      : unsigned(0 to 8) := (others => '0');
+   signal coll_y_r      : unsigned(0 to 9) := (others => '0');
 
    -- Extra status
    signal horz_en       : std_logic;
@@ -472,7 +482,7 @@ begin
 
 
    -- The status register number determines which status is returned.
-   process (v9938, v38_reg, vr, hr, cmd_tr, cmd_bd, cmd_ce, cmd_col, cmd_asx, eo,
+   process (v9938, v38_reg, vr, hr, cmd_tr, cmd_bd, cmd_ce, cmd_col, cmd_asx, eo, coll_x_r, coll_y_r,
    reg15sreg_num, intr_ff, sp_5s_ff, sp_c_ff, sp_5th_reg, horz_ff,
    gpu_status, gpu_running, scanline, reg_val, blank,
    cnt_nano_sr, cnt_micro_sr, cnt_milli_sr, cnt_sec_sr)
@@ -492,18 +502,20 @@ begin
             clear_sr1 <= '1';
          when X"2" =>   -- TR, VR, HR, BD, 1, 1, EO, CE
             status_reg <= cmd_tr & vr & hr & cmd_bd & "11" & eo & cmd_ce;
+         when X"3" =>   -- collision X
+            status_reg <= std_logic_vector(coll_x_r(1 to 8));
          when X"4" =>
-            status_reg <= X"FE";
+            status_reg <= "1111111" & coll_x_r(0);
+         when X"5" =>   -- collision Y
+            status_reg <= std_logic_vector(coll_y_r(2 to 9));
          when X"6" =>
-            status_reg <= X"FC";
+            status_reg <= "111111" & std_logic_vector(coll_y_r(0 to 1));
          when X"7" =>   -- command color
             status_reg <= cmd_col;
          when X"8" =>   -- SRCH / command X
             status_reg <= cmd_asx(1 to 8);
          when X"9" =>
             status_reg <= "1111111" & cmd_asx(0);
-         when X"3" | X"5" =>
-            status_reg <= X"00";
          when others =>
             status_reg <= X"FF";
          end case;
@@ -744,7 +756,18 @@ begin
          if pram_load = '1' then data_port_mode <= reg47dpm; end if;
 
          -- Sample and hold status bits until the status register is read.
-         if sp_cf = '1' and sp_cf_en = '1' then sp_c_ff <= '1'; end if;
+         -- V9938: only collisions in the screen (not in the borders) count,
+         -- and no sprite status at all with the display off (BL = 0), like
+         -- openMSX (sprites are not checked).  The 9918A mode keeps the F18A
+         -- behavior (f18a-y7g: to verify on real hardware).
+         if sp_cf = '1' and sp_cf_en = '1' and
+            (v9938 = '0' or (sp_xact = '1' and v38_reg(1)(1) = '1')) then
+            sp_c_ff <= '1';
+            if sp_c_ff = '0' then
+               coll_x_r <= ('0' & sp_x) + COLL_X_ADD;
+               coll_y_r <= ("00" & scanline) + COLL_Y_ADD;
+            end if;
+         end if;
 
          -- Sample the interrupt ticks.  The flags can be set in the status byte
          -- independently from the interrupt enable bit.
@@ -764,7 +787,7 @@ begin
          -- 5TH number fix.  Only set the 5S flag if the frame flag is 0.
          -- The 5s flag is restricted to the active scan lines, 0..192 and 0..239,
          -- in the sprite module.
-         if sp_5s = '1' and intr_ff = '0' then
+         if sp_5s = '1' and intr_ff = '0' and (v9938 = '0' or v38_reg(1)(1) = '1') then
             sp_5s_ff <= '1';
          end if;
 
@@ -949,6 +972,10 @@ begin
             end if;
 
             if v9938 = '1' and v38_reg(15)(4 to 7) = X"7" then cmd_s7_rd <= '1'; end if;
+            if v9938 = '1' and v38_reg(15)(4 to 7) = X"5" then
+               coll_x_r <= (others => '0');
+               coll_y_r <= (others => '0');
+            end if;
             if v9938 = '1' and v38_reg(15)(4 to 7) = X"9" then cmd_s9_rd <= '1'; end if;
 
          when st_setup_addr =>
