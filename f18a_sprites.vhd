@@ -80,8 +80,16 @@ entity f18a_sprites is
       sprt_ps        : in  std_logic_vector(0 to 1);  -- sprite palette select for normal mode
       ecm            : in  unsigned(0 to 1);          -- enhanced color mode
    -- VRAM Interface
+      -- V9938 mode
+      v38            : in  std_logic;                 -- '1' in V9938 mode: 17-bit tables from R5/R6/R11
+      v38_mode2      : in  std_logic;                 -- '1' for sprite mode 2 (G3-G7)
+      v38_r5         : in  std_logic_vector(0 to 7);
+      v38_r6         : in  std_logic_vector(0 to 7);
+      v38_r11        : in  std_logic_vector(0 to 7);
+      v38_tp         : in  std_logic;                 -- R8 TP: color 0 is not transparent
+      v38_spd        : in  std_logic;                 -- R8 SPD: sprites disabled
       vdin           : in  std_logic_vector(0 to 7);
-      vaddr          : out std_logic_vector(0 to 13);
+      vaddr          : out std_logic_vector(0 to 16);
    -- Outputs
       sprt_color     : out std_logic_vector(0 to 7);
       sprt_cf        : out std_logic;
@@ -95,7 +103,7 @@ architecture rtl of f18a_sprites is
 
    -- The sprite line buffers are 512 pixels by 9-bits per pixel.
    constant ADDR_WIDTH : integer := 9;
-   constant DATA_WIDTH : integer := 9;
+   constant DATA_WIDTH : integer := 13;   -- 9 bits + the 4-bit sprite mode 2 CC group
 
    type sprite_line_buffer is array (0 to 2**ADDR_WIDTH-1) of
       std_logic_vector (0 to DATA_WIDTH-1);
@@ -121,7 +129,7 @@ architecture rtl of f18a_sprites is
       st_idle, st_clear, st_setup,
       st_sat_tag,
       st_sat_y, st_sat_name,
-      st_sat_x, st_ptrn_setup,
+      st_sat_x, st_m2col, st_m2col_d, st_ptrn_setup,
       st_ptrn1a, st_ptrn1b,
       st_ptrn2a, st_ptrn2b,
       st_ptrn3a, st_ptrn3b,
@@ -209,6 +217,21 @@ architecture rtl of f18a_sprites is
    signal clear_en      : std_logic;
    signal allowed       : std_logic;                  -- if sprites are allowed
 
+   -- V9938
+   signal vaddr14       : std_logic_vector(0 to 13);  -- 9918A / F18A address
+   signal v38_sat_s     : std_logic_vector(0 to 16);  -- attribute byte address
+   signal v38_col_s     : std_logic_vector(0 to 16);  -- mode 2 color table address
+   signal v38_spg_s     : std_logic_vector(0 to 16);  -- pattern address
+   signal col_sel       : std_logic := '0';           -- '1' to address the mode 2 color table
+   signal sp_row        : std_logic_vector(0 to 3);   -- sprite line (not magnified)
+   signal sp_cc         : std_logic := '0';           -- mode 2 CC: OR into the sprite group
+   signal sp_ic         : std_logic := '0';           -- mode 2 IC: no collision
+   signal grp           : unsigned(0 to 3) := (others => '0');  -- current CC group
+   signal grp_valid     : std_logic := '0';           -- a CC = 0 sprite started a group
+   signal ra_grp        : std_logic_vector(0 to 3);   -- read ahead group
+   signal coll_ok       : std_logic;                  -- the sprite takes part in collisions
+   signal v38_max       : unsigned(0 to 4);           -- sprites per line in V9938 mode
+
 begin
 
    -- Line buffer 1
@@ -236,7 +259,12 @@ begin
    end process;
 
    -- Sprites are not allowed in text modes when the F18A is locked.
-   allowed <= '0' when ((gmode = 1 or gmode = 9) and unlocked = '0') else '1';
+   allowed <=
+      '0' when v38 = '1' and v38_spd = '1' else
+      '0' when ((gmode = 1 or gmode = 9) and unlocked = '0') else '1';
+
+   -- The V9938 shows 4 sprites per line in mode 1 and 8 in mode 2.
+   v38_max <= "01000" when v38_mode2 = '1' else "00100";
 
 
    -- Sprites can specify to use the VR1 "global" size bit, or specify
@@ -281,7 +309,8 @@ begin
 
    -- Sprite maximum reached indicator
    hit_sprite_max <=
-      in_range when active_cnt = sprite_max and sprite_max /= 31 else '0';
+      in_range when v38 = '1' and active_cnt = v38_max else
+      in_range when v38 = '0' and active_cnt = sprite_max and sprite_max /= 31 else '0';
 
    -- Report the 5th sprite for legacy support when enabled (default).  This
    -- will not stop the processing of sprites.  Fixes problem with software
@@ -289,7 +318,7 @@ begin
    -- for scan line detection.
    -- Testing against 5 instead of 4 since active_cnt is incremented before
    -- report5th_s is registered for it's single-tick notification.
-   report5th_s <= (not reportmax_i) when active_cnt = 5 else '0';
+   report5th_s <= (not reportmax_i) when active_cnt = 5 and v38 = '0' else '0';
 
    -- Stop processing if an end of sprite list byte is found.
    -- The stop byte is only active when the ROW30 flag is '0'.  To limit sprites
@@ -298,7 +327,10 @@ begin
    -- sprite Y-location.  Only VR51 values 0..31 are considered, and values from
    -- 32..63 are treated as 32.
    stop_byte <= '1' when
-      (vdin = x"D0" and row30 = '0') or (stop_sprt(0) = '0' and spnum = stop_sprt(1 to 5)) else
+      (v38 = '1' and v38_mode2 = '1' and vdin = x"D8") or
+      (v38 = '1' and v38_mode2 = '0' and vdin = x"D0") or
+      (v38 = '0' and vdin = x"D0" and row30 = '0') or
+      (v38 = '0' and stop_sprt(0) = '0' and spnum = stop_sprt(1 to 5)) else
       '0';
 
 
@@ -345,9 +377,29 @@ begin
 
 
    -- VRAM Interface mux
-   vaddr <=
+   vaddr14 <=
       satba & std_logic_vector(spnum) & sp_att_byte when vram_mux_sel = '0' else
       spgba_sel & name_mux(3 to 6) & ptrn_mux;
+
+   -- V9938 tables (openMSX masking): mode 1 attributes at R11:R5 + 4 * sprite,
+   -- mode 2 attributes at the table + 512 and colors at the table + 16 * sprite
+   -- + line, inside a 1 KB window; patterns at R6 (A16-A11).
+   v38_sat_s <=
+      v38_r11(6 to 7) & v38_r5 & std_logic_vector(spnum) & sp_att_byte when v38_mode2 = '0' else
+      v38_r11(6 to 7) & v38_r5(0 to 4) & v38_r5(5) & "00" & std_logic_vector(spnum) & sp_att_byte;
+   v38_col_s <=
+      v38_r11(6 to 7) & v38_r5(0 to 4) & '0' &
+      (v38_r5(6) and spnum(0)) & (v38_r5(7) and spnum(1)) & std_logic_vector(spnum(2 to 4)) & sp_row;
+   v38_spg_s <= v38_r6(2 to 7) & name_mux & ptrn_mux;
+
+   vaddr <=
+      "000" & vaddr14 when v38 = '0' else
+      v38_col_s when col_sel = '1' else
+      v38_sat_s when vram_mux_sel = '0' else
+      v38_spg_s;
+
+   -- Sprite line for the color table, not magnified.
+   sp_row <= y_range(4 to 7) when mag_bit = '0' else y_range(3 to 6);
 
 
    -- Extra pattern table offsets.
@@ -430,6 +482,9 @@ begin
             spnum <= (others => '0');
             active_cnt <= (others => '0');
             sprt_5s_flag <= '0';
+            grp <= (others => '0');
+            grp_valid <= '0';
+            col_sel <= '0';
 
             if prescan_start = '1' then
                sprt_state <= st_clear;
@@ -492,6 +547,8 @@ begin
          when st_sat_tag =>
 
             sprt_state <= st_sat_y;
+            sp_cc       <= '0';
+            sp_ic       <= '0';
 
             -- y byte from SAT is being addressed
             -- current data is tag byte
@@ -561,6 +618,35 @@ begin
             -- ptrn1a addressing during next state
             vram_mux_sel <= '1';
             spgba_sel <= spgba & name_mux(0 to 2); -- ptrn1
+
+            -- Sprite mode 2: read the color of this sprite line first.
+            if v38_mode2 = '1' and in_range = '1' and hit_sprite_max = '0' then
+               sprt_state <= st_m2col;
+               col_sel <= '1';
+            end if;
+
+         when st_m2col =>
+
+            -- The color table byte is being addressed.
+            sprt_state <= st_m2col_d;
+            col_sel <= '1';
+
+         when st_m2col_d =>
+
+            -- EC | CC | IC | 0 | color.  A CC = 0 sprite starts a new group
+            -- that the following CC = 1 sprites OR their color into.
+            sprt_state <= st_ptrn_setup;
+            col_sel <= '0';
+            -- Address the 1st pattern byte next, as st_sat_x does.
+            vram_mux_sel <= '1';
+            sp_ecb   <= vdin(0);
+            sp_cc    <= vdin(1);
+            sp_ic    <= vdin(2);
+            sp_color <= vdin(4 to 7);
+            if vdin(1) = '0' then
+               grp <= grp + 1;
+               grp_valid <= '1';
+            end if;
 
          when st_ptrn_setup =>
 
@@ -770,7 +856,14 @@ begin
    -- keep the original color.
    -- Other enhanced color modes, a pattern pixel of 1 means a color,
    -- thus a pixel.  Only a 0 bit pattern is transparent in ECMs 1..3.
-   ispix <= '0' when (sp_color = "0000" and ecm = 0) else pixbit;
+   ispix <=
+      '0' when v38_mode2 = '1' and sp_cc = '1' and grp_valid = '0' else   -- CC with no group: hidden
+      '0' when v38 = '1' and v38_tp = '0' and sp_color = "0000" else
+      pixbit when v38 = '1' else
+      '0' when (sp_color = "0000" and ecm = 0) else pixbit;
+
+   -- Mode 2: only CC = 0, IC = 0 sprites of a color other than 0 collide.
+   coll_ok <= '0' when v38_mode2 = '1' and (sp_cc = '1' or sp_ic = '1' or sp_color = "0000") else '1';
 
 
    -- Record if the pixel had a *pattern* bit at the current x location.  This
@@ -778,7 +871,7 @@ begin
    -- new ECMs, at least one pattern bit must be 1.  For ECMs > 0, this will be
    -- the same as ispix.
    -- If the collision indicator bit is already set for this x location, keep it.
-   cnbit <= pixbit when ra_cnbit = '0' else '1';
+   cnbit <= (pixbit and coll_ok) when ra_cnbit = '0' else '1';
 
    -- Record if two sprites collided at this x pixel.  In normal mode, collision
    -- is based strictly on the pattern pixels and color is not considered.  This
@@ -788,7 +881,7 @@ begin
    -- The collision flag is used during line buffer output to only trigger the
    -- status register's collision flag if the sprite was in the visible display
    -- area of the screen.
-   cf <= pixbit and ra_cnbit;
+   cf <= pixbit and coll_ok and ra_cnbit;
 
    -- ps = palette select
    -- cs = color select
@@ -799,19 +892,25 @@ begin
    -- 1-bit mode   : ps0 cs0 cs1 cs2 cs3 px0
    -- 2-bit mode   : cs0 cs1 cs2 cs3 px1 px0
    -- 3-bit mode   : cs0 cs1 cs2 px2 px1 px0
-   process (clear_en, ra_data, ra_ispix, ispix, cnbit, cf,
-   ecm, sprt_ps, sp_color, pix0, pix1, pix2)
+   process (clear_en, ra_data, ra_ispix, ispix, cnbit, cf, ra_grp, grp, v38_mode2, sp_cc,
+   pixbit, ecm, sprt_ps, sp_color, pix0, pix1, pix2)
    begin
       if clear_en = '1' then
-         din <= "000000000";
+         din <= (others => '0');
       elsif ra_ispix = '1' then
-         din <= cf & ra_data;
+         -- Already a sprite pixel here (a lower sprite number has priority).
+         -- Mode 2: a CC = 1 sprite of the same group ORs its color in.
+         if v38_mode2 = '1' and sp_cc = '1' and pixbit = '1' and ra_grp = std_logic_vector(grp) then
+            din <= cf & ra_data(0 to 3) & (ra_data(4 to 7) or sp_color) & ra_grp;
+         else
+            din <= cf & ra_data & ra_grp;
+         end if;
       else
       case ecm is
-      when "00" => din <= cf & ispix & cnbit & sprt_ps & sp_color;                     -- Original color mode
-      when "01" => din <= cf & ispix & cnbit & sprt_ps(0) & sp_color & pix0;           -- 1-bit color
-      when "10" => din <= cf & ispix & cnbit & sp_color & pix1 & pix0;                 -- 2-bit color
-      when "11" => din <= cf & ispix & cnbit & sp_color(0 to 2) & pix2 & pix1 & pix0;  -- 3-bit color
+      when "00" => din <= cf & ispix & cnbit & sprt_ps & sp_color & std_logic_vector(grp);                     -- Original color mode
+      when "01" => din <= cf & ispix & cnbit & sprt_ps(0) & sp_color & pix0 & std_logic_vector(grp);           -- 1-bit color
+      when "10" => din <= cf & ispix & cnbit & sp_color & pix1 & pix0 & std_logic_vector(grp);                 -- 2-bit color
+      when "11" => din <= cf & ispix & cnbit & sp_color(0 to 2) & pix2 & pix1 & pix0 & std_logic_vector(grp);  -- 3-bit color
       when others => null;
       end case;
       end if;
@@ -829,6 +928,7 @@ begin
    ra_ispix <= dout1b(1) when y_next(8) = '0' else dout2b(1);
    ra_cnbit <= dout1b(2) when y_next(8) = '0' else dout2b(2);
    ra_data  <= dout1b(1 to 8) when y_next(8) = '0' else dout2b(1 to 8);
+   ra_grp   <= dout1b(9 to 12) when y_next(8) = '0' else dout2b(9 to 12);
 
 
    -- When y_next is even, data goes to linebuf1.

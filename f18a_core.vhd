@@ -132,6 +132,9 @@ architecture rtl of f18a_core is
    signal v38_vscroll_s    : unsigned(0 to 7);
    signal v38_hadj_s       : signed(0 to 3);
    signal v38_vadj_s       : signed(0 to 3);
+   signal v38_sp2_s        : std_logic;                  -- V9938 sprites
+   signal v38_r5_s, v38_r6_s, v38_r11_s : std_logic_vector(0 to 7);
+   signal v38_tp_s, v38_spd_s : std_logic;
    signal v38_vr_s         : std_logic;                  -- V9938 S#2 VR / HR
    signal v38_hr_s         : std_logic;
 
@@ -244,7 +247,7 @@ architecture rtl of f18a_core is
    signal override_b_s     : std_logic_vector(0 to 3);
 
    -- Sprite to VRAM
-   signal sprt_addr_s      : std_logic_vector(0 to 13);
+   signal sprt_addr_s      : std_logic_vector(0 to 16);
 
 
    -- Internal options
@@ -323,6 +326,12 @@ begin
       v38_vscroll    => v38_vscroll_s,
       v38_hadj       => v38_hadj_s,
       v38_vadj       => v38_vadj_s,
+      v38_sp2        => v38_sp2_s,
+      v38_r5         => v38_r5_s,
+      v38_r6         => v38_r6_s,
+      v38_r11        => v38_r11_s,
+      v38_tp         => v38_tp_s,
+      v38_spd        => v38_spd_s,
    -- VRAM Interface
       vdin           => cpu_dout_s,       -- In to CPU from *out* of VRAM
       vwe            => cpu_we_s,
@@ -534,6 +543,13 @@ begin
       spgsize_i      => spgsize_s,        -- sprite pattern table offset size
       sprt_ps        => sprt_ps_s,
       ecm            => sprt_ecm_s,
+      v38            => v9938_i,
+      v38_mode2      => v38_sp2_s,
+      v38_r5         => v38_r5_s,
+      v38_r6         => v38_r6_s,
+      v38_r11        => v38_r11_s,
+      v38_tp         => v38_tp_s,
+      v38_spd        => v38_spd_s,
    -- VRAM Interface
       vdin           => tile_dout_s,      -- In to Sprite from *out* of VRAM
       vaddr          => sprt_addr_s,

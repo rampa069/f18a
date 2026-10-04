@@ -69,13 +69,13 @@ entity f18a_vram is
       tile_addr   : in  std_logic_vector(0 to 13);
       tile_dout   : out std_logic_vector(0 to 7);
 -- SPRITE Interface
-      sprt_addr   : in  std_logic_vector(0 to 13)
+      sprt_addr   : in  std_logic_vector(0 to 16)   -- 17 bits (V9938 sprite tables)
    );
 end f18a_vram;
 
 architecture rtl of f18a_vram is
 
-   signal addr_mux : std_logic_vector(0 to 13);
+   signal addr_mux : std_logic_vector(0 to 16);
    signal addr2_s  : std_logic_vector(0 to ABITS - 1);
 
 begin
@@ -95,12 +95,8 @@ begin
          dout2 => tile_dout
       );
 
-   addr_mux <= tile_addr when tile_active = '1' else sprt_addr;
-
-   -- The tiles and sprites address the first 16 KB for now.
-   addr2_s(ABITS - 14 to ABITS - 1) <= addr_mux;
-   gen_hi : if ABITS > 14 generate
-      addr2_s(0 to ABITS - 15) <= (others => '0');
-   end generate;
+   -- The tiles address the first 16 KB for now.
+   addr_mux <= "000" & tile_addr when tile_active = '1' else sprt_addr;
+   addr2_s <= addr_mux(17 - ABITS to 16);
 
 end rtl;

@@ -89,6 +89,9 @@ DISPLAY_SCENES = {
     "g2_212": lambda: scene("G2", 22, lines212=True),
     "g2_scroll": lambda: scene("G2", 23, scroll=200),
     "mc_212_scroll": lambda: scene("MC", 24, lines212=True, scroll=9),
+    "g3": lambda: scene("G3", 6),
+    "g3_212_scroll": lambda: scene("G3", 7, lines212=True, scroll=37),
+    "g3_mag": lambda: scene("G3", 25, mag=True),
 }
 
 SCENES = {

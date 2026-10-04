@@ -5,6 +5,8 @@
     F18A_UPDATE_GOLDEN=1 make test    # regenerate golden frames
 """
 
+import os
+
 import pytest
 from cocotb_tools.check_results import get_results
 
@@ -34,6 +36,26 @@ def sim(toplevel):
 @pytest.mark.parametrize("module,toplevel", MODULES, ids=[m for m, _ in MODULES])
 def test_module(module, toplevel):
     xml = runner.test(sim(toplevel), module, toplevel=toplevel)
+    try:
+        _, failed = get_results(xml)
+    except SystemExit:
+        failed = "some"
+    assert not failed, f"{failed} cocotb test(s) failed in {module}, see sim/sim_build/{module}.log"
+
+
+def _quick_cases():
+    """F18A_QUICK: "module.py::test ..." pairs, grouped per module."""
+    groups = {}
+    for item in os.environ.get("F18A_QUICK", "").split():
+        mod, case = item.split("::")
+        groups.setdefault(mod.removesuffix(".py"), []).append(case)
+    return list(groups.items())
+
+
+@pytest.mark.parametrize("module,cases", _quick_cases(), ids=[m for m, _ in _quick_cases()])
+def test_quick(module, cases):
+    toplevel = dict(MODULES)[module]
+    xml = runner.test(sim(toplevel), module, testcase=cases, toplevel=toplevel)
     try:
         _, failed = get_results(xml)
     except SystemExit:

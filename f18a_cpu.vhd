@@ -79,6 +79,12 @@ entity f18a_cpu is
       v38_vscroll : out unsigned(0 to 7);             -- V9938 R23 vertical scroll
       v38_hadj    : out signed(0 to 3);               -- V9938 R18 set adjust, horizontal
       v38_vadj    : out signed(0 to 3);               --                       vertical
+      v38_sp2     : out std_logic;                    -- V9938 sprite mode 2 (G3-G7)
+      v38_r5      : out std_logic_vector(0 to 7);     -- V9938 sprite tables
+      v38_r6      : out std_logic_vector(0 to 7);
+      v38_r11     : out std_logic_vector(0 to 7);
+      v38_tp      : out std_logic;                    -- V9938 R8 TP
+      v38_spd     : out std_logic;                    -- V9938 R8 SPD
    -- VRAM Interface
       vdin        : in  std_logic_vector(0 to 7);
       vwe         : out std_logic;
@@ -1300,6 +1306,14 @@ begin
    v38_hadj     <= signed(v38_reg(18)(4 to 7)) when v9938 = '1' else (others => '0');
    v38_vadj     <= signed(v38_reg(18)(0 to 3)) when v9938 = '1' else (others => '0');
 
+   -- Sprite mode 2 in G3-G7 (M4 or M5, not T2).
+   v38_sp2      <= v9938 and (v38_m(0) or v38_m(1)) and not v38_m(4);
+   v38_r5       <= v38_reg(5);
+   v38_r6       <= v38_reg(6);
+   v38_r11      <= v38_reg(11);
+   v38_tp       <= v38_reg(8)(2);
+   v38_spd      <= v38_reg(8)(6);
+
    -- V9938 registers R0-R46.
    v38_m      <= v38_reg(0)(4) & v38_reg(0)(5) & v38_reg(0)(6) & v38_reg(1)(4) & v38_reg(1)(3);
    v38_planar <= v9938 and v38_m(0) and v38_m(2);            -- G6, G7
@@ -1354,7 +1368,9 @@ begin
    -- See Idle state.
    intr_n <= intr_n_reg;
 
-   gmode       <= reg0m4 & reg0m3 & reg1m2 & reg1m1;
+   -- In V9938 mode G3 (M4) shows like G2 (M3) with sprite mode 2.
+   gmode       <= "0100" when v9938 = '1' and v38_m = "01000" else
+                  reg0m4 & reg0m3 & reg1m2 & reg1m1;
    soft_blank  <= reg1b;
    size_bit    <= reg1size;
    mag_bit     <= reg1mag;

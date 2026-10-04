@@ -37,7 +37,7 @@ def mask_banner(frame):
     return frame
 
 
-async def load(f, vram, regs, pal, vram_size=0x4000):
+async def load(f, vram, regs, pal, vram_size=0x8000):
     """Load a scene in V9938 mode: palette (9Ah), VRAM, registers."""
     await f.reset(v9938=True)
     await f.set_reg(1, 0x00)                   # blank while loading
@@ -45,8 +45,11 @@ async def load(f, vram, regs, pal, vram_size=0x4000):
     for r, g, b in pal:
         await f.write_port(2, (r << 4) | b)
         await f.write_port(2, g)
+    # 16 KB blocks: the address only carries into R14 in the V9938 modes.
+    for block in range(0, vram_size, 0x4000):
+        await f.set_reg(14, block >> 14)
+        await f.write_vram(0, vram[block: block + 0x4000])
     await f.set_reg(14, 0)
-    await f.write_vram(0, vram[:vram_size])
     for r, v in enumerate(regs):
         if r not in (14, 15, 16, 17):
             await f.set_reg(r, v)
@@ -162,3 +165,45 @@ async def set_adjust(dut):
         # (modulo a frame: the vsync may move to the other side of the top)
         err = ((v0 - dv) - vadj) % GEOM15["ntsc"][2]
         assert min(err, GEOM15["ntsc"][2] - err) < 0.5, f"R18={r18:02x}: vsync to picture {dv:.2f} vs {v0:.2f}"
+
+
+async def sprite_status(dut, entries, mode2=True):
+    """Show sprites over a blank G3 / G1 screen for a frame; return S#0."""
+    vram = bytearray(vm.VRAM_SIZE)
+    vram[0x7800:0x7800 + 32] = b"\xFF" * 32           # pattern 0: solid 16x16
+    if mode2:
+        regs = [0x04, 0x42, 0x06, 0xFF, 0x03, 0xEF, 0x0F, 0x04, 0x08, 0, 0, 0]
+        v9938_scenes.sprite_table(vram, 0x7600, 0x7400, entries)
+    else:
+        regs = [0x00, 0x42, 0x06, 0x80, 0x00, 0xEC, 0x0F, 0x04, 0x08, 0, 0, 0]
+        for i, (y, x, name, colors) in enumerate(entries):
+            vram[0x7600 + i * 4: 0x7600 + i * 4 + 4] = bytes((y, x, name, colors[0]))
+    f = F18A(dut)
+    await load(f, vram, regs, vm.DEFAULT_PALETTE)
+    await FallingEdge(dut.vsync_n_o)
+    await f.read_status()
+    await FallingEdge(dut.vsync_n_o)
+    return await f.read_status()
+
+
+@cocotb.test()
+async def sprite2_status(dut):
+    """Sprite mode 2: 9th sprite in S#0, collisions only between CC = 0 and
+    IC = 0 sprites of a color other than 0."""
+    def entries(colors_b, nine=False):
+        e = [(50, 100, 0, [0x0F]), (50, 108, 0, colors_b)]
+        if nine:
+            e += [(120, 20 * k, 0, [0x02]) for k in range(9)]
+        return e + [(216, 0, 0, [0])]
+    cases = [
+        ([0x05], False, True),            # plain overlap: collision
+        ([0x25], False, False),           # IC: no collision
+        ([0x45], False, False),           # CC: no collision
+        ([0x00], False, False),           # color 0: no collision
+    ]
+    for colors_b, nine, collide in cases:
+        s0 = await sprite_status(dut, entries(colors_b, nine))
+        assert bool(s0 & 0x20) == collide, f"color {colors_b[0]:02x}: S#0 {s0:02x}, collision expected {collide}"
+    # Nine sprites on a line: 5S and the number of the 9th (sprite 10).
+    s0 = await sprite_status(dut, entries([0x25], nine=True))
+    assert s0 & 0x40 and s0 & 0x1F == 10, f"9th sprite: S#0 {s0:02x}, expected 5S and 10"

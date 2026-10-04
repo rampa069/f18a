@@ -14,7 +14,8 @@ make -C sim setup         # creates ../.venv with cocotb, pytest, numpy, pillow
 
 ```bash
 make -C sim test                        # everything (~17 min)
-make -C sim test T=host_io              # one module: host_io, timing, render, ocm
+make -C sim test T=host_io              # one module: host_io, timing, render, v9938_io, v9938_display, ocm
+make -C sim test-quick                  # one test of each area (~1 min)
 F18A_UPDATE_GOLDEN=1 make -C sim test   # regenerate sim/golden/*.png
 ```
 
