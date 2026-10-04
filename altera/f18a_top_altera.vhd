@@ -63,9 +63,14 @@ entity f18a_top_altera is
       clk_cpu_net    : out std_logic;  -- 3.5795MHz CPUCLK
       cd_net         : inout std_logic_vector(0 to 7);
 
-      -- Video generation
+      -- Video generation.  With video_15k_net = '0' (jumper fitted) the
+      -- outputs carry 15KHz RGB with separate hsync / vsync and a composite
+      -- sync on csync_net.  Otherwise they are 640x480 VGA (csync_net is
+      -- the VGA hsync and vsync combined).  All syncs are active low.
+      video_15k_net  : in  std_logic;
       hsync_net      : out std_logic;
       vsync_net      : out std_logic;
+      csync_net      : out std_logic;
       red_net        : out std_logic_vector(0 to 3);
       grn_net        : out std_logic_vector(0 to 3);
       blu_net        : out std_logic_vector(0 to 3);
@@ -116,6 +121,11 @@ architecture rtl of f18a_top_altera is
 
    -- Output routing.
    signal cd_out_s         : std_logic_vector(0 to 7);
+   signal video_15k_s      : std_logic;
+   signal hsync_s, vsync_s : std_logic;
+   signal red_s, grn_s, blu_s : std_logic_vector(0 to 3);
+   signal hsync15_s, vsync15_s, csync15_s : std_logic;
+   signal red15_s, grn15_s, blu15_s : std_logic_vector(0 to 3);
 
    -- Output GROM and CPU clock generation.
    signal cpuclk_r         : std_logic := '0';
@@ -192,11 +202,21 @@ begin
 
       -- Video Output
       blank_o        => open,
-      hsync_o        => hsync_net,
-      vsync_o        => vsync_net,
-      red_o          => red_net,
-      grn_o          => grn_net,
-      blu_o          => blu_net,
+      hsync_o        => hsync_s,
+      vsync_o        => vsync_s,
+      red_o          => red_s,
+      grn_o          => grn_s,
+      blu_o          => blu_s,
+
+      -- 15KHz Video Output
+      video_15k_i    => video_15k_s,
+      red15_o        => red15_s,
+      grn15_o        => grn15_s,
+      blu15_o        => blu15_s,
+      hsync15_n_o    => hsync15_s,
+      vsync15_n_o    => vsync15_s,
+      csync15_n_o    => csync15_s,
+      blank15_o      => open,
 
       -- Feature Selection
       sprite_max_i   => usr1_net,      -- Default sprite max, '0' = 32, '1' = 4
@@ -208,6 +228,29 @@ begin
       spi_mosi_o     => spi_mosi_net,
       spi_miso_i     => spi_miso_net
    );
+
+
+   -- Video output selection.  The jumper is read by the core at the end of
+   -- each frame; the outputs follow the selected timing.
+   video_15k_s <= not video_15k_net;
+
+   process (clk_100m0_s) begin if rising_edge(clk_100m0_s) then
+      if video_15k_s = '1' then
+         hsync_net <= hsync15_s;
+         vsync_net <= vsync15_s;
+         csync_net <= csync15_s;
+         red_net   <= red15_s;
+         grn_net   <= grn15_s;
+         blu_net   <= blu15_s;
+      else
+         hsync_net <= hsync_s;
+         vsync_net <= vsync_s;
+         csync_net <= hsync_s and vsync_s;
+         red_net   <= red_s;
+         grn_net   <= grn_s;
+         blu_net   <= blu_s;
+      end if;
+   end if; end process;
 
 
    -- Host interface data bus tristate.

@@ -13,8 +13,8 @@ make -C sim setup         # creates ../.venv with cocotb, pytest, numpy, pillow
 ## Running
 
 ```bash
-make -C sim test                        # everything (~8 min)
-make -C sim test T=host_io              # one module: host_io, timing, render
+make -C sim test                        # everything (~13 min)
+make -C sim test T=host_io              # one module: host_io, timing, render, video15k
 F18A_UPDATE_GOLDEN=1 make -C sim test   # regenerate sim/golden/*.png
 ```
 
@@ -25,13 +25,14 @@ Logs, results and captured frames go to `sim/sim_build/`
 
 | File | Purpose |
 |---|---|
-| `tb/f18a_tb.vhd` | Wrapper: 100/25 MHz clocks, dumps VGA frames to PPM files while `capture_en_i` is set |
+| `tb/f18a_tb.vhd` | Wrapper: 100/25 MHz clocks, dumps VGA frames (`capture_en_i`) and 15 kHz frames (`capture15_en_i`) to PPM files |
 | `f18a_driver.py` | Host bus driver (9918A MODE/CSW/CSR cycles), VRAM/register helpers, frame capture |
 | `tms9918_model.py` | Reference TMS9918A renderer (G1, G2, MC, Text 1, sprites, status flags) |
 | `scenes.py` | Deterministic VRAM images and register sets |
 | `tests/test_host_io.py` | VRAM read/write, auto-increment, read-ahead, control port latch |
 | `tests/test_timing.py` | VGA sync timing, active area, frame interrupt and status F flag |
 | `tests/test_render.py` | Renders each scene, compares against the model and the golden PNGs |
+| `tests/test_video15k.py` | 15 kHz output: sync timing, composite sync, interrupt rate, image vs. model |
 
 Each render test is checked twice: against the reference model (is the
 output a correct 9918A image?) and against `golden/<scene>.png` (did the

@@ -54,6 +54,8 @@ entity f18a_vga_cont_640_60 is
    port(
       vga_clk  : in std_logic;
       rst_n    : in std_logic;
+      timing_15k : in std_logic;    -- '1' = 796x524 frame for the 15KHz output
+      frame_15k  : out std_logic;   -- frame size in use, changes at the end of a frame
       hsync    : out std_logic;
       vsync    : out std_logic;
       raster_x : out unsigned(0 to 9);
@@ -83,6 +85,19 @@ architecture rtl of f18a_vga_cont_640_60 is
 --   constant HMAX  : integer := 799;    -- 0 to 799 == 800 pixels
    constant HMAX  : integer := 793;    -- 0 to 799 == 800 pixels
    constant VMAX  : integer := 524;    -- 0 to 524 == 525 lines
+
+   -- 15KHz mode.  Every 15KHz line is two VGA lines, so the frame needs an
+   -- even number of lines: 524 VGA lines = 262 15KHz lines, like the 9918A.
+   -- The line is stretched to 796 pixels so the 15KHz line is 63.68us
+   -- (342 pixels of the 9918A 5.37MHz clock = 63.69us) and the frame rate is
+   -- 59.94Hz.
+   constant HMAX_15K : integer := 795;
+   constant VMAX_15K : integer := 523;
+
+   -- Frame size in use, only changed at the end of a frame.
+   signal hmax_r  : unsigned(0 to 9) := to_unsigned(HMAX, 10);
+   signal vmax_r  : unsigned(0 to 9) := to_unsigned(VMAX, 10);
+   signal frame_15k_r : std_logic := '0';
 
    -- 640x480 display size.
    constant HSIZE : integer := 640;
@@ -121,7 +136,7 @@ begin
       if rst_n = '0' then
          hcounter <= (others => '0');
       else
-         if hcounter = HMAX then
+         if hcounter = hmax_r then
             hcounter <= (others => '0');
          else
             hcounter <= hcounter + 1;
@@ -138,9 +153,18 @@ begin
       if rst_n = '0' then
          vcounter <= (others => '0');
       else
-         if hcounter = HMAX then
-            if vcounter = VMAX then
+         if hcounter = hmax_r then
+            if vcounter = vmax_r then
                vcounter <= (others => '0');
+               -- Select the frame size for the next frame.
+               frame_15k_r <= timing_15k;
+               if timing_15k = '1' then
+                  hmax_r <= to_unsigned(HMAX_15K, 10);
+                  vmax_r <= to_unsigned(VMAX_15K, 10);
+               else
+                  hmax_r <= to_unsigned(HMAX, 10);
+                  vmax_r <= to_unsigned(VMAX, 10);
+               end if;
             else
                vcounter <= vcounter + 1;
             end if;
@@ -181,7 +205,8 @@ begin
    raster_x <= hcounter;
    raster_y <= vcounter;
 
-   y_tick <= '1' when hcounter = HMAX else '0';
+   y_tick <= '1' when hcounter = hmax_r else '0';
+   frame_15k <= frame_15k_r;
    y_max <= '1' when vcounter = VSIZE else '0';
 
    -- Blank is active when the raster is outside visible screen area.

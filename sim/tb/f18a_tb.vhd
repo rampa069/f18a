@@ -38,9 +38,21 @@ entity f18a_tb is
       grn_o          : out std_logic_vector(0 to 3);
       blu_o          : out std_logic_vector(0 to 3);
 
+      -- 15KHz video.
+      video_15k_i    : in  std_logic;
+      red15_o        : out std_logic_vector(0 to 3);
+      grn15_o        : out std_logic_vector(0 to 3);
+      blu15_o        : out std_logic_vector(0 to 3);
+      hsync15_n_o    : out std_logic;
+      vsync15_n_o    : out std_logic;
+      csync15_n_o    : out std_logic;
+      blank15_o      : out std_logic;
+
       -- Frame capture control.
       capture_en_i   : in  std_logic;
-      frames_o       : out integer      -- number of frames written so far
+      frames_o       : out integer;     -- number of VGA frames written so far
+      capture15_en_i : in  std_logic;
+      frames15_o     : out integer      -- number of 15KHz frames written so far
    );
 end f18a_tb;
 
@@ -57,6 +69,13 @@ architecture sim of f18a_tb is
    signal blu_s      : std_logic_vector(0 to 3);
 
    signal frames     : integer := 0;
+
+   signal red15_s    : std_logic_vector(0 to 3);
+   signal grn15_s    : std_logic_vector(0 to 3);
+   signal blu15_s    : std_logic_vector(0 to 3);
+   signal vsync15_s  : std_logic;
+   signal blank15_s  : std_logic;
+   signal frames15   : integer := 0;
 
 begin
 
@@ -95,6 +114,14 @@ begin
       blu_o          => blu_s,
       sprite_max_i   => sprite_max_i,
       scanlines_i    => scanlines_i,
+      video_15k_i    => video_15k_i,
+      red15_o        => red15_s,
+      grn15_o        => grn15_s,
+      blu15_o        => blu15_s,
+      hsync15_n_o    => hsync15_n_o,
+      vsync15_n_o    => vsync15_s,
+      csync15_n_o    => csync15_n_o,
+      blank15_o      => blank15_s,
       spi_clk_o      => open,
       spi_cs_o       => open,
       spi_mosi_o     => open,
@@ -110,6 +137,12 @@ begin
    grn_o       <= grn_s;
    blu_o       <= blu_s;
    frames_o    <= frames;
+   red15_o     <= red15_s;
+   grn15_o     <= grn15_s;
+   blu15_o     <= blu15_s;
+   vsync15_n_o <= vsync15_s;
+   blank15_o   <= blank15_s;
+   frames15_o  <= frames15;
 
 
    -- Frame capture.  A frame starts with the first active pixel after the
@@ -162,6 +195,64 @@ begin
 
          vsync_d := vsync_s;
          blank_d := blank_s;
+      end if;
+   end process;
+
+
+
+   -- 15KHz frame capture: one sample per half pixel (568 x 240 visible).
+   -- The output pixel for a new half pixel position is stable two clocks
+   -- after the position counter in f18a_video_15k changes; sample it one
+   -- clock later.
+   capture15 : process (clk_100m0)
+      alias hpos is << signal .f18a_tb.inst_core.inst_video_15k.hpos_r : unsigned(0 to 9) >>;
+      type hpos_dly_t is array (1 to 4) of unsigned(0 to 9);
+      variable hpos_d  : hpos_dly_t := (others => (others => '0'));
+      file     f       : text;
+      variable l       : line;
+      variable open_v  : boolean := false;
+      variable armed   : boolean := false;
+      variable vsync_d : std_logic := '1';
+      variable blank_d : std_logic := '1';
+   begin
+      if rising_edge(clk_100m0) then
+
+         if vsync_d = '1' and vsync15_s = '0' then
+            if open_v then
+               file_close(f);
+               open_v := false;
+               frames15 <= frames15 + 1;
+            end if;
+            armed := capture15_en_i = '1';
+         end if;
+
+         if blank15_s = '0' then
+            if armed and not open_v then
+               file_open(f, CAPTURE_DIR & "/frame15_" & integer'image(frames15) & ".ppm", write_mode);
+               write(l, string'("P3"));
+               writeline(f, l);
+               write(l, string'("568 240"));
+               writeline(f, l);
+               write(l, string'("15"));
+               writeline(f, l);
+               open_v := true;
+               armed := false;
+            end if;
+            if open_v and hpos_d(3) /= hpos_d(4) then
+               write(l, to_integer(unsigned(red15_s)));
+               write(l, ' ');
+               write(l, to_integer(unsigned(grn15_s)));
+               write(l, ' ');
+               write(l, to_integer(unsigned(blu15_s)));
+               write(l, ' ');
+            end if;
+         elsif blank_d = '0' and open_v then
+            writeline(f, l);
+         end if;
+
+         hpos_d := hpos & hpos_d(1 to 3);
+         vsync_d := vsync15_s;
+         blank_d := blank15_s;
       end if;
    end process;
 

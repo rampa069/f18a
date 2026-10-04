@@ -6,7 +6,7 @@ original Xilinx Spartan-3E board.
 
 | File | Purpose |
 |---|---|
-| `f18a_top_altera.vhd` | Top level: PLL, power-on reset, host bus tristate, CPUCLK/GROMCLK outputs |
+| `f18a_top_altera.vhd` | Top level: PLL, power-on reset, host bus tristate, CPUCLK/GROMCLK outputs, VGA / 15 kHz output selection |
 | `f18a_pll.v` | altpll: 50 MHz in, 100 MHz + 25 MHz (phase aligned) out |
 | `f18a.qpf`, `f18a.qsf` | Project, sources, device, I/O defaults |
 | `f18a.sdc` | Clocks and false paths for the asynchronous host bus and video outputs |
@@ -32,6 +32,17 @@ quartus_sh --flow compile f18a
   (VRAM to GPU, tile line buffer to palette RAM) without an intermediate
   register, so there is little margin when the core shares the device with
   other logic.
+
+## Video output
+
+`video_15k_net` (weak pull-up, jumper to ground) selects the video output:
+
+| Jumper | Output |
+|---|---|
+| off | 640x480 VGA, 59.97 Hz: `hsync_net`, `vsync_net`, 4-bit RGB (`csync_net` = hsync AND vsync) |
+| on | 15.7 kHz RGB, 262 lines, 59.94 Hz, like a real 9918A: `hsync_net`, `vsync_net`, `csync_net` (composite), 4-bit RGB |
+
+All syncs are active low.  The selection takes effect at the next frame.
 
 ## Notes
 

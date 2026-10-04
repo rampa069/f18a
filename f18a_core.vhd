@@ -82,6 +82,16 @@ entity f18a_core is
       grn_o                : out std_logic_vector(0 to 3);
       blu_o                : out std_logic_vector(0 to 3);
 
+      -- 15KHz RGB Video Output, valid when video_15k_i = '1'
+      video_15k_i          : in  std_logic;  -- '1' = 15KHz timing (VGA becomes 796x524, 59.94Hz)
+      red15_o              : out std_logic_vector(0 to 3);
+      grn15_o              : out std_logic_vector(0 to 3);
+      blu15_o              : out std_logic_vector(0 to 3);
+      hsync15_n_o          : out std_logic;
+      vsync15_n_o          : out std_logic;
+      csync15_n_o          : out std_logic;
+      blank15_o            : out std_logic;
+
       -- Feature Selection
       sprite_max_i         : in std_logic;   -- Default sprite max, '0' = 32, '1' = 4
       scanlines_i          : in std_logic;   -- Simulated scan lines, '0' = no, '1' = yes
@@ -114,6 +124,7 @@ architecture rtl of f18a_core is
    signal raster_y_s       : unsigned(0 to 9);
    signal y_tick_s         : std_logic;
    signal y_max_s          : std_logic;
+   signal frame_15k_s      : std_logic;
 
    -- Counter signals
    signal in_margin_s      : std_logic;
@@ -234,6 +245,7 @@ architecture rtl of f18a_core is
    -- Register external inputs.
    signal reset_n_r        : std_logic := '1';
    signal scanlines_r      : std_logic := '0';
+   signal video_15k_r      : std_logic := '0';
    signal sprite_max_r     : std_logic_vector(0 to 4) := "11111";
 
 begin
@@ -244,6 +256,7 @@ begin
    if rising_edge(clk_100m0_i) then
       reset_n_r      <= reset_n_i;
       scanlines_r    <= scanlines_i;
+      video_15k_r    <= video_15k_i;
 
       -- Select the power-on / reset default maximum number of sprites per line.
       -- The max sprites can also be changed after power-on via a VDP register.
@@ -369,6 +382,8 @@ begin
    port map (
       vga_clk        => clk_25m0_i,
       rst_n          => reset_n_r,
+      timing_15k     => video_15k_r,
+      frame_15k      => frame_15k_s,
       hsync          => hsync_s,
       vsync          => vsync_s,
       raster_x       => raster_x_s,
@@ -389,6 +404,7 @@ begin
       raster_y       => raster_y_s,
       y_tick         => y_tick_s,
       y_max          => y_max_s,
+      timing_15k     => frame_15k_s,
       sprt_yreal     => sprt_yreal_s,
       gmode          => gmode_s,
       row30          => row30_s,
@@ -575,6 +591,25 @@ begin
       grn_r    <= grn_s;
       blu_r    <= blu_s;
    end if; end process;
+
+   -- 15KHz RGB output from the same pixels as the VGA output.
+   inst_video_15k : entity work.f18a_video_15k
+   port map (
+      clk            => clk_100m0_i,
+      vga_clk        => clk_25m0_i,
+      raster_x       => raster_x_s,
+      raster_y       => raster_y_s,
+      red_i          => red_s,
+      grn_i          => grn_s,
+      blu_i          => blu_s,
+      red_o          => red15_o,
+      grn_o          => grn15_o,
+      blu_o          => blu15_o,
+      hsync_n_o      => hsync15_n_o,
+      vsync_n_o      => vsync15_n_o,
+      csync_n_o      => csync15_n_o,
+      blank_o        => blank15_o
+   );
 
    blank_o     <= blank_r;
    hsync_o     <= hsync_r;

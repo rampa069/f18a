@@ -63,6 +63,7 @@ entity f18a_counters is
       raster_y       : in unsigned(0 to 9);
       y_tick         : in std_logic;
       y_max          : in std_logic;
+      timing_15k     : in std_logic;    -- '1' when the VGA frame is 524 lines (frame_15k)
       sprt_yreal     : in std_logic;            -- 1 to use real sprite location, 0 for original off-by-one
       gmode          : in unsigned(0 to 3);
       row30          : in std_logic;            -- 1 when 30 rows
@@ -103,6 +104,7 @@ architecture rtl of f18a_counters is
 
    constant SL_RESET1: integer := 46;
    constant SL_RESET2: integer := 523;
+   constant SL_RESET2_15K: integer := 522;   -- 2 rasters before line 0 of a 524 line frame
 
    -- 32 x 30 tiles = 256 x 240 2x-pixels = 512 x 480 1x-pixels
    -- No top or bottom margin
@@ -231,7 +233,8 @@ begin
    -- Horizontal scan line output.
    scanline_reset <= '1' when
       (raster_y = SL_RESET1 and row30reg = '0') or
-      (raster_y = SL_RESET2 and row30reg = '1') else '0';
+      (raster_y = SL_RESET2 and row30reg = '1' and timing_15k = '0') or
+      (raster_y = SL_RESET2_15K and row30reg = '1' and timing_15k = '1') else '0';
 
    process (vga_clk) begin if rising_edge(vga_clk) then
       if raster_x = 1 then

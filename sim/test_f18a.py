@@ -10,7 +10,7 @@ from cocotb_tools.check_results import get_results
 
 import runner
 
-MODULES = ["test_host_io", "test_timing", "test_render"]
+MODULES = ["test_host_io", "test_timing", "test_render", "test_video15k"]
 
 
 @pytest.fixture(scope="session")

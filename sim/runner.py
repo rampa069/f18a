@@ -19,6 +19,7 @@ RTL_SOURCES = [
     "f18a_single_port_ram.vhd",
     "f18a_vram.vhd",
     "f18a_vga_cont_640_60.vhd",
+    "f18a_video_15k.vhd",
     "f18a_gpu.vhd",
     "f18a_cpu.vhd",
     "f18a_tile_linebuf.vhd",
