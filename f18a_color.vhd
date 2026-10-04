@@ -66,6 +66,8 @@ entity f18a_color is
       sprt_color  : in  std_logic_vector(0 to 7);
       bg_color    : in  std_logic_vector(0 to 5);
       show_bg     : in  std_logic;
+      g5          : in  std_logic;                    -- V9938 G5: sprite colors split in two halves
+      half        : in  std_logic;                    -- G5 half pixel: '0' left (bits 3-2), '1' right (1-0)
       tile_r      : out std_logic_vector(0 to 3);
       tile_g      : out std_logic_vector(0 to 3);
       tile_b      : out std_logic_vector(0 to 3)
@@ -200,6 +202,8 @@ begin
    tile_en <= tile_color(0) and not show_bg;
 
    addr2_next <=
+      "0000" & sprt_color(4 to 5) when sprt_en = '1' and g5 = '1' and half = '0' else
+      "0000" & sprt_color(6 to 7) when sprt_en = '1' and g5 = '1' else
       sprt_color(2 to 7) when sprt_en = '1' else
       tile_color(2 to 7) when tile_en = '1' else
       bg_color;

@@ -81,6 +81,14 @@ def scene(mode, seed, lines212=False, scroll=0, tp=False, mag=False):
     return vram, regs, pal
 
 
+def page1(sc):
+    """Show bitmap page 1 (R2 bit 5): the page 0 picture copied there."""
+    vram, regs, pal = sc
+    vram[0x8000:0x8000 + 0x6A00] = bytes(reversed(vram[0x0000:0x6A00]))
+    regs[2] = 0x3F
+    return vram, regs, pal
+
+
 # Scenes the 9918A tile engine can show in V9938 mode today: tables in the
 # first 16 KB, 192 / 212 lines, vertical scroll.
 DISPLAY_SCENES = {
@@ -92,6 +100,11 @@ DISPLAY_SCENES = {
     "g3": lambda: scene("G3", 6),
     "g3_212_scroll": lambda: scene("G3", 7, lines212=True, scroll=37),
     "g3_mag": lambda: scene("G3", 25, mag=True),
+    "g4_212": lambda: scene("G4", 8, lines212=True),
+    "g4_scroll": lambda: scene("G4", 26, scroll=77),
+    "g4_mag_tp": lambda: scene("G4", 9, tp=True, mag=True),
+    "g4_page1": lambda: page1(scene("G4", 27, lines212=True)),
+    "g5_212": lambda: scene("G5", 10, lines212=True),
 }
 
 SCENES = {

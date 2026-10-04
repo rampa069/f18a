@@ -26,6 +26,10 @@ def model_frame(model, standard="ntsc"):
     rgb = np.array([[expand(c) for c in p] for p in model.palette], dtype=np.uint8)
     frame = np.empty((top + model.lines + bottom, W15, 3), dtype=np.uint8)
     frame[:, :] = rgb[model.border()]
+    if model.mode == vm.G5:
+        # G5 border: half pixels alternate R7 bits 3-2 and 1-0 (x = 26 is the
+        # left half of pixel 0).
+        frame[:, 1::2] = rgb[model.regs[7] & 3]
     x0 = ACTIVE_X - X15_FIRST
     frame[top: top + model.lines, x0: x0 + 512] = rgb[model.render()]
     return frame
@@ -37,7 +41,7 @@ def mask_banner(frame):
     return frame
 
 
-async def load(f, vram, regs, pal, vram_size=0x8000):
+async def load(f, vram, regs, pal, vram_size=0x10000):
     """Load a scene in V9938 mode: palette (9Ah), VRAM, registers."""
     await f.reset(v9938=True)
     await f.set_reg(1, 0x00)                   # blank while loading

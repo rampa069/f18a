@@ -33,7 +33,7 @@ Logs, results and captured frames go to `sim/sim_build/`
 | `tests/test_host_io.py` | VRAM read/write, auto-increment, read-ahead, control port latch |
 | `tests/test_timing.py` | NTSC / PAL sync timing, picture area, composite sync, frame interrupt and status F flag |
 | `tests/test_render.py` | Renders each scene (NTSC, two also PAL), compares against the model and the golden PNGs |
-| `tests/test_v9938_display.py` | V9938 mode display: G1/G2/MC with 192/212 lines and R#23 against the model, line interrupt (R#19, IE1, FH), set adjust (R#18) |
+| `tests/test_v9938_display.py` | V9938 mode display against the model: G1/G2/MC/G3/G4/G5 with 192/212 lines, R#23, pages, TP, sprite mode 2; sprite status; line interrupt (R#19, IE1, FH); set adjust (R#18) |
 | `tests/test_v9938_io.py` | V9938 mode CPU interface (ports 98h-9Bh, R#14, planar addresses, palette, indirect registers, status) against `v9938_model.py` |
 | `tb/ocm_tb.vhd`, `tb/f18a_vdp_pll_sim.vhd` | OCM-PLD VDP wrapper testbench (CLK21M, frames sampled on CLK21M) and PLL model |
 | `tests/test_ocm.py` | OCM-PLD wrapper: dot clocks, bus, MSX2 register writes, PAL/NTSC selection, 15/31 kHz line timing and image |

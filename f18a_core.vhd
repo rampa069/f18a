@@ -135,6 +135,11 @@ architecture rtl of f18a_core is
    signal v38_sp2_s        : std_logic;                  -- V9938 sprites
    signal v38_r5_s, v38_r6_s, v38_r11_s : std_logic_vector(0 to 7);
    signal v38_tp_s, v38_spd_s : std_logic;
+   signal v38_bmp_s        : std_logic;                  -- V9938 bitmap modes
+   signal v38_bmode_s      : std_logic_vector(0 to 1);
+   signal v38_r2_s, v38_r7_s : std_logic_vector(0 to 7);
+   signal v38_g5_s         : std_logic;
+   signal half_r           : std_logic := '0';           -- half pixel parity, aligned with x_pixel_pos
    signal v38_vr_s         : std_logic;                  -- V9938 S#2 VR / HR
    signal v38_hr_s         : std_logic;
 
@@ -238,7 +243,7 @@ architecture rtl of f18a_core is
 
    -- Tile to VRAM
    signal tile_active_s    : std_logic;
-   signal tile_addr_s      : std_logic_vector(0 to 13);
+   signal tile_addr_s      : std_logic_vector(0 to 16);
    signal tile_dout_s      : std_logic_vector(0 to 7);
 
    signal override_s       : std_logic;
@@ -332,6 +337,10 @@ begin
       v38_r11        => v38_r11_s,
       v38_tp         => v38_tp_s,
       v38_spd        => v38_spd_s,
+      v38_bmp        => v38_bmp_s,
+      v38_bmode      => v38_bmode_s,
+      v38_r2         => v38_r2_s,
+      v38_r7         => v38_r7_s,
    -- VRAM Interface
       vdin           => cpu_dout_s,       -- In to CPU from *out* of VRAM
       vwe            => cpu_we_s,
@@ -472,6 +481,10 @@ begin
       gmode          => gmode_s,
       row30          => row30_s,
       v9938          => v9938_i,
+      bmp_en         => v38_bmp_s,
+      bmp_mode       => v38_bmode_s,
+      bmp_r2         => v38_r2_s,
+      bmp_tp         => v38_tp_s,
       textfg         => textfg_s,
       textbg         => textbg_s,
    -- F18A specific
@@ -575,6 +588,8 @@ begin
       sprt_color     => sprt_color_s,
       bg_color       => bg_color_s,
       show_bg        => show_bg,
+      g5             => v38_g5_s,
+      half           => half_r,
       tile_r         => tile_r_s,
       tile_g         => tile_g_s,
       tile_b         => tile_b_s
@@ -603,8 +618,19 @@ begin
    v38_vr_s <= not y_margin_n_s;
    v38_hr_s <= in_margin_s and y_margin_n_s;
 
-   -- Use TL1 as the background color palette selector.
-   bg_color_s <= (tile_ps_s(2 to 3) & textbg_s);
+   -- Half pixel parity, aligned with x_pixel_pos (one pixel clock behind
+   -- raster_x; the 256 pixel area starts on an even raster_x).
+   process (clk_pix_i) begin if rising_edge(clk_pix_i) then
+      half_r <= raster_x_s(9);
+   end if; end process;
+   v38_g5_s <= '1' when v38_bmp_s = '1' and v38_bmode_s = "01" else '0';
+
+   -- Use TL1 as the background color palette selector.  In G5 the border
+   -- (and transparent color 0) alternates between R7 bits 3-2 and 1-0.
+   bg_color_s <=
+      "0000" & v38_r7_s(4 to 5) when v38_g5_s = '1' and half_r = '0' else
+      "0000" & v38_r7_s(6 to 7) when v38_g5_s = '1' else
+      (tile_ps_s(2 to 3) & textbg_s);
 
    -- soft_blank_s == VR1 blank bit and '0' means blank to background color
    show_bg <= in_margin_s or (not soft_blank_s);

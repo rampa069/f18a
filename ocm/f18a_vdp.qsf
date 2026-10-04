@@ -18,6 +18,7 @@ set_global_assignment -name VHDL_FILE ../f18a_raster.vhd
 set_global_assignment -name VHDL_FILE ../f18a_gpu.vhd
 set_global_assignment -name VHDL_FILE ../f18a_cpu.vhd
 set_global_assignment -name VHDL_FILE ../f18a_tile_linebuf.vhd
+set_global_assignment -name VHDL_FILE ../f18a_bitmap.vhd
 set_global_assignment -name VHDL_FILE ../f18a_tiles.vhd
 set_global_assignment -name VHDL_FILE ../f18a_sprites.vhd
 set_global_assignment -name VHDL_FILE ../f18a_core.vhd

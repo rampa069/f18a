@@ -85,6 +85,10 @@ entity f18a_cpu is
       v38_r11     : out std_logic_vector(0 to 7);
       v38_tp      : out std_logic;                    -- V9938 R8 TP
       v38_spd     : out std_logic;                    -- V9938 R8 SPD
+      v38_bmp     : out std_logic;                    -- V9938 bitmap mode G4-G7
+      v38_bmode   : out std_logic_vector(0 to 1);     -- "00" G4, "01" G5, "10" G6, "11" G7
+      v38_r2      : out std_logic_vector(0 to 7);
+      v38_r7      : out std_logic_vector(0 to 7);
    -- VRAM Interface
       vdin        : in  std_logic_vector(0 to 7);
       vwe         : out std_logic;
@@ -1306,6 +1310,15 @@ begin
    v38_hadj     <= signed(v38_reg(18)(4 to 7)) when v9938 = '1' else (others => '0');
    v38_vadj     <= signed(v38_reg(18)(0 to 3)) when v9938 = '1' else (others => '0');
 
+   -- Bitmap modes: G4 01100, G5 10000, G6 10100, G7 11100 (M5 M4 M3 M2 M1).
+   v38_bmp      <= v9938 and (v38_m(0) or (v38_m(1) and v38_m(2)));
+   v38_bmode    <= "00" when v38_m(0) = '0' else         -- G4
+                   "01" when v38_m(2) = '0' else         -- G5
+                   "10" when v38_m(1) = '0' else         -- G6
+                   "11";                                 -- G7
+   v38_r2       <= v38_reg(2);
+   v38_r7       <= v38_reg(7);
+
    -- Sprite mode 2 in G3-G7 (M4 or M5, not T2).
    v38_sp2      <= v9938 and (v38_m(0) or v38_m(1)) and not v38_m(4);
    v38_r5       <= v38_reg(5);
@@ -1368,8 +1381,12 @@ begin
    -- See Idle state.
    intr_n <= intr_n_reg;
 
-   -- In V9938 mode G3 (M4) shows like G2 (M3) with sprite mode 2.
+   -- In V9938 mode G3 (M4) shows like G2 (M3) with sprite mode 2.  The
+   -- bitmap modes use the 256 (G4, G7) or 512 (G5, G6) pixel grid of the
+   -- counters ("0100" / "1010"); the tile FSM is idle in them.
    gmode       <= "0100" when v9938 = '1' and v38_m = "01000" else
+                  "0100" when v9938 = '1' and (v38_m = "01100" or v38_m = "11100") else
+                  "1010" when v9938 = '1' and (v38_m = "10000" or v38_m = "10100") else
                   reg0m4 & reg0m3 & reg1m2 & reg1m1;
    soft_blank  <= reg1b;
    size_bit    <= reg1size;

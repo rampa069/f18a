@@ -66,7 +66,7 @@ entity f18a_vram is
       cpu_dout    : out std_logic_vector(0 to 7);
 -- TILE Interface
       tile_active : in  std_logic;
-      tile_addr   : in  std_logic_vector(0 to 13);
+      tile_addr   : in  std_logic_vector(0 to 16);
       tile_dout   : out std_logic_vector(0 to 7);
 -- SPRITE Interface
       sprt_addr   : in  std_logic_vector(0 to 16)   -- 17 bits (V9938 sprite tables)
@@ -95,8 +95,7 @@ begin
          dout2 => tile_dout
       );
 
-   -- The tiles address the first 16 KB for now.
-   addr_mux <= "000" & tile_addr when tile_active = '1' else sprt_addr;
+   addr_mux <= tile_addr when tile_active = '1' else sprt_addr;
    addr2_s <= addr_mux(17 - ABITS to 16);
 
 end rtl;

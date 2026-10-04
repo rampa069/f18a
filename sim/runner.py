@@ -23,6 +23,7 @@ RTL_SOURCES = [
     "f18a_gpu.vhd",
     "f18a_cpu.vhd",
     "f18a_tile_linebuf.vhd",
+    "f18a_bitmap.vhd",
     "f18a_tiles.vhd",
     "f18a_sprites.vhd",
     "f18a_core.vhd",

@@ -65,6 +65,10 @@ entity f18a_tiles is
       gmode          : in  unsigned(0 to 3);
       row30          : in  std_logic;                 -- 1 when 30 rows
       v9938          : in  std_logic;                 -- 1 in V9938 mode: 32 rows (256 lines) wrap
+      bmp_en         : in  std_logic;                 -- V9938 bitmap mode (G4-G7), f18a_bitmap
+      bmp_mode       : in  std_logic_vector(0 to 1);  -- "00" G4, "01" G5, "10" G6, "11" G7
+      bmp_r2         : in  std_logic_vector(0 to 7);
+      bmp_tp         : in  std_logic;
       textfg         : in  std_logic_vector(0 to 3);
       textbg         : in  std_logic_vector(0 to 3);
    -- F18A specific
@@ -102,7 +106,7 @@ entity f18a_tiles is
       bml_fat_i      : in  std_logic;                 -- '1' to set BML fat-pixel mode
    -- VRAM Interface
       vdin           : in  std_logic_vector(0 to 7);
-      vaddr          : out std_logic_vector(0 to 13);
+      vaddr          : out std_logic_vector(0 to 16);
       tile_active    : out std_logic;
    -- Outputs
       sprite_start   : out std_logic;
@@ -270,6 +274,21 @@ architecture rtl of f18a_tiles is
    signal pixcnt_r, pixcnt_x : natural range 0 to 7 := 0;
 
    signal we_s       : std_logic;   -- Line buffer write enable
+
+   -- V9938 bitmap modes
+   signal vaddr14       : std_logic_vector(0 to 13);
+   signal tile_act_s    : std_logic;
+   signal spr_start_s   : std_logic;
+   signal trig_tile_s   : std_logic;   -- tile FSM trigger (not in bitmap modes)
+   signal bmp_start_s   : std_logic;
+   signal bmp_active_s  : std_logic;
+   signal bmp_vaddr_s   : std_logic_vector(0 to 16);
+   signal bmp_we_s      : std_logic;
+   signal bmp_x_s       : unsigned(0 to 8);
+   signal bmp_din_s     : std_logic_vector(0 to 7);
+   signal bmp_done_s    : std_logic;
+   signal lb_din_s      : std_logic_vector(0 to 7);
+   signal lb_x_s        : unsigned(0 to 8);
    signal we_sel     : std_logic;   -- Final line buffer write enable based on current tile layer
 
    -- Pixel shifting
@@ -344,11 +363,11 @@ begin
       clk      => clk,
       we1      => we1,
       addr1    => addr1,
-      din1     => din,
+      din1     => lb_din_s,
       dout1    => dout1,
       we2      => we2,
       addr2    => addr2,
-      din2     => din,
+      din2     => lb_din_s,
       dout2    => dout2
    );
 
@@ -360,15 +379,19 @@ begin
    we_sel <= we_s and ((not layer_sel_r) or tile_din_s(0));
 
    -- When y_next_r is even, data goes to linebuf1.
-   we1 <= (not y_next_r(8)) and we_sel;
-   we2 <= y_next_r(8) and we_sel;
+   we1 <= (not y_next_r(8)) and (we_sel or bmp_we_s);
+   we2 <= y_next_r(8) and (we_sel or bmp_we_s);
+
+   -- Bitmap modes write the line buffer instead of the tile FSM.
+   lb_x_s   <= bmp_x_s when bmp_en = '1' else x_linebuf_r;
+   lb_din_s <= bmp_din_s when bmp_en = '1' else din;
 
    -- Buffer address mux.  A y_next_r that is odd means the even buffer
    -- (linebuf1) has data to display since it was filled on the even
    -- y_next_r line.
-   addr1 <= std_logic_vector(x_linebuf_r) when y_next_r(8) = '0' else
+   addr1 <= std_logic_vector(lb_x_s) when y_next_r(8) = '0' else
       std_logic_vector(x_pixel_pos);
-   addr2 <= std_logic_vector(x_linebuf_r) when y_next_r(8) = '1' else
+   addr2 <= std_logic_vector(lb_x_s) when y_next_r(8) = '1' else
       std_logic_vector(x_pixel_pos);
 
    -- Tile layers.
@@ -422,13 +445,13 @@ begin
    ptrn_addr_s, ptrn2ba_s, ptrn3ba_s, colr_addr_s, bml_addr_r)
    begin
       case state_x is
-      when ST_ADDR_NAME    => vaddr <= name_addr_s;
-      when ST_ADDR_ATTR    => vaddr <= attr_addr_r;
-      when ST_ADDR_PTRN1   => vaddr <= ptrn_addr_s;
-      when ST_ADDR_PTRN2   => vaddr <= ptrn2ba_s & ptrn_addr_r(6 to 13);
-      when ST_ADDR_PTRN3   => vaddr <= ptrn3ba_s & ptrn_addr_r(5 to 13);
-      when ST_ADDR_COLR    => vaddr <= colr_addr_s;
-      when others          => vaddr <= bml_addr_r;
+      when ST_ADDR_NAME    => vaddr14 <= name_addr_s;
+      when ST_ADDR_ATTR    => vaddr14 <= attr_addr_r;
+      when ST_ADDR_PTRN1   => vaddr14 <= ptrn_addr_s;
+      when ST_ADDR_PTRN2   => vaddr14 <= ptrn2ba_s & ptrn_addr_r(6 to 13);
+      when ST_ADDR_PTRN3   => vaddr14 <= ptrn3ba_s & ptrn_addr_r(5 to 13);
+      when ST_ADDR_COLR    => vaddr14 <= colr_addr_s;
+      when others          => vaddr14 <= bml_addr_r;
       end case;
    end process;
 
@@ -953,7 +976,7 @@ begin
    process (state_r, shift_r, name_r, layer_sel_r, tile_pri_r,
    vpo_r, flip_x_r, y_pix_row_r, trans_r, pal_sel_r, attr_r,
    ptrn1_r, ptrn2_r, ptrn3_r, colr_fg_r, colr_bg_r,
-   mcm_fg_r, mcm_bg_r, sprite_en_r, trig_start_r,
+   mcm_fg_r, mcm_bg_r, sprite_en_r, trig_tile_s,
    vdin, vdin_s, textmode_r, ecm, pos_attr_i, gmode_r, textfg, textbg, t2_pri_en)
    begin
 
@@ -976,19 +999,19 @@ begin
 
       -- Combinatorial defaults
       flip_x_sel <= '0';
-      tile_active <= '1';                 -- VRAM tile / sprite selector
-      sprite_start <= '0';
+      tile_act_s <= '1';                 -- VRAM tile / sprite selector
+      spr_start_s <= '0';
 
 
       case state_r is
 
       when ST_IDLE =>
 
-         tile_active    <= '0';           -- Tile vs. sprite VRAM mux select.
+         tile_act_s     <= '0';           -- Tile vs. sprite VRAM mux select.
 
-         if trig_start_r = '1' then
+         if trig_tile_s = '1' then
             state_x <= ST_SETUP;
-            tile_active <= '1';
+            tile_act_s <= '1';
          end if;
 
       -- The addressing state order is important, as is the amount of time it takes
@@ -1115,8 +1138,8 @@ begin
          -- !! Expansion must be fewer states than the addressing FSM !!
          if shift_r = SHIFT_IDLE then
             state_x <= ST_IDLE;
-            sprite_start <= sprite_en_r;
-            tile_active <= '0';
+            spr_start_s <= sprite_en_r;
+            tile_act_s <= '0';
          else
             state_x <= ST_SETUP;
          end if;
@@ -1151,7 +1174,7 @@ begin
    -- Pattern shift registers.
    -- This FSM expands the tile and BML pixels into the line buffer.
    -- !! Expansion must be fewer states than the addressing FSM !!
-   process (shift_r, state_r, done_r, x_linebuf_r, pixcnt_r, hto_r, hpo_r, hto_s, trig_start_r,
+   process (shift_r, state_r, done_r, x_linebuf_r, pixcnt_r, hto_r, hpo_r, hto_s, trig_tile_s,
    ptrn1_r, ptrn2_r, ptrn3_r, p1_r, p2_r, p3_r, ntba_s, hscroll_s, hsize_s,
    x_expand_max_r, x_pixel_max, textstart_r, textpos_r, text_ntba_s, textattr_r, ctba_s,
    t_ntba_pos_r, t_horz_off_s, t_ctba_pos_r, texttile_r, text_cmax_s, textmode_r, text_hpo_s)
@@ -1197,7 +1220,7 @@ begin
             hpo_x <= unsigned(text_hpo_s);
          end if;
 
-         if trig_start_r = '1' then
+         if trig_tile_s = '1' then
             shift_x <= SHIFT_LOAD;
          end if;
 
@@ -1379,5 +1402,31 @@ begin
       end if;
    end if;
    end process;
+
+   -- V9938 bitmap modes.
+   trig_tile_s <= trig_start_r and not bmp_en;
+   bmp_start_s <= trig_start_r and bmp_en;
+
+   inst_bitmap : entity work.f18a_bitmap
+   port map (
+      clk         => clk,
+      rst_n       => rst_n,
+      start       => bmp_start_s,
+      mode        => bmp_mode,
+      r2          => bmp_r2,
+      y           => y_next_r(1 to 8),
+      tp          => bmp_tp,
+      active      => bmp_active_s,
+      vaddr       => bmp_vaddr_s,
+      vdin        => vdin,
+      we          => bmp_we_s,
+      x           => bmp_x_s,
+      din         => bmp_din_s,
+      done        => bmp_done_s
+   );
+
+   vaddr        <= bmp_vaddr_s when bmp_active_s = '1' else "000" & vaddr14;
+   tile_active  <= tile_act_s or bmp_active_s;
+   sprite_start <= spr_start_s or bmp_done_s;
 
 end rtl;
