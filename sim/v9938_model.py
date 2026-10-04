@@ -12,6 +12,9 @@ is the most hardware-verified V9938 emulation:
   192 / 212 lines, vertical scroll (R#23).
 - The CPU interface: ports 98h-9Bh, address latch, R#14, palette (R#16 and
   port 9Ah), indirect register access (R#17 and port 9Bh), status registers.
+- The command engine (R#32-R#46, S#2 TR / BD / CE, S#7, S#8 / S#9), see
+  v9938_cmd.py: commands run at once when R#46 is written, except the CPU
+  transfers (HMMC / LMMC: one step per R#44 write, LMCM: per S#7 read).
 
 The picture is produced as color codes, not RGB: palette indices 0-15 in
 every mode except G7, where it is the 8-bit GGGRRRBB value.  An active line
@@ -21,6 +24,8 @@ TEXT_OFFSET pixels into it, filled with the border color around.
 """
 
 import numpy as np
+
+from v9938_cmd import CmdEngine
 
 VRAM_SIZE = 0x20000
 
@@ -69,7 +74,7 @@ class V9938:
         self.palette = list(palette or DEFAULT_PALETTE)
         self.status = [0] * 10
         self.status[1] = 0x00               # ID 0 = V9938
-        self.status[2] = 0x8C               # TR = 1, unused bits 1
+        self.status[2] = 0x0C               # unused bits 1; TR, BD, CE from the command engine
         self.status[4] = 0xFE               # unused bits read as 1
         self.status[6] = 0xFC
         self.status[9] = 0xFE
@@ -79,6 +84,13 @@ class V9938:
         self.palette_latch = None
         self.palette_written = set()        # entries written through port 9Ah
         self.read_ahead = 0
+        self.v9958 = False                  # R#25 CMD bit: commands in non-bitmap modes
+        # Command engine, loaded with R#32-R#45 (R#46 = 0: no command).
+        self.cmd = CmdEngine(self)
+        for r in range(32, 46):
+            self.cmd.write_reg(r - 32, self.regs[r])
+        self.cmd.CMD = 0
+        self._cmd_regs()
 
     # -- Mode and tables ----------------------------------------------------
 
@@ -160,9 +172,20 @@ class V9938:
     def read_status(self):
         self.latch = None
         n = self.regs[15] & 0x0F
-        value = self.status[n] if n < len(self.status) else 0xFF
+        if n == 2:
+            self.cmd.sync()
+            value = (self.status[2] & ~0x91) | self.cmd.status
+        elif n == 7:
+            value = self.cmd.read_s7()
+        elif n == 8:
+            value = self.cmd.read_s8()
+        elif n == 9:
+            value = self.cmd.read_s9()
+        else:
+            value = self.status[n] if n < len(self.status) else 0xFF
         if n == 0:
             self.status[0] &= 0x1F
+        self._cmd_regs()
         return value
 
     def write_palette(self, value):
@@ -183,10 +206,22 @@ class V9938:
             self.regs[17] = (self.regs[17] & 0xC0) | ((reg + 1) & 0x3F)
 
     def write_reg(self, reg, value):
+        if 32 <= reg < 47:
+            self.cmd.write_reg(reg - 32, value & 0xFF)
+            self._cmd_regs()
+            return
         if reg < len(self.regs):
             self.regs[reg] = value & 0xFF
         if reg == 16:
             self.palette_latch = None
+        if reg in (0, 1, 25):
+            self.cmd.mode_changed()
+            self._cmd_regs()
+
+    def _cmd_regs(self):
+        """R#32-R#46 read back from the command engine."""
+        for i in range(15):
+            self.regs[32 + i] = self.cmd.read_reg(i)
 
     # -- Display ------------------------------------------------------------
 

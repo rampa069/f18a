@@ -7,9 +7,11 @@ DI / HALT loop so the BIOS does not touch the VDP), and takes raw
 screenshots.  The screenshots are decoded back to VDP color codes so they
 can be compared with v9938_model without depending on the RGB conversion.
 
-Host setup (once): a Docker image "openmsx-headless" built from
-sim/openmsx/Dockerfile on the host given by F18A_OPENMSX_HOST
-(default rampa@ea5iue-laptop.local), working directory F18A_OPENMSX_DIR.
+Host setup (once): a Docker image "openmsx-master" (openMSX built from git
+master) from sim/openmsx/Dockerfile.master on the host given by
+F18A_OPENMSX_HOST (default rampa@ea5iue-laptop.local), working directory
+F18A_OPENMSX_DIR.  F18A_OPENMSX_IMAGE=openmsx-headless (Debian's openMSX
+20.0, sim/openmsx/Dockerfile) selects the older version.
 
     from openmsx_oracle import Scene, run_scenes
     shots = run_scenes([Scene("g4", vram, regs, palette)])
@@ -29,7 +31,7 @@ import v9938_model as vm
 
 HOST = os.environ.get("F18A_OPENMSX_HOST", "rampa@ea5iue-laptop.local")
 REMOTE_DIR = os.environ.get("F18A_OPENMSX_DIR", "fpga/openmsx-docker")
-IMAGE = "openmsx-headless"
+IMAGE = os.environ.get("F18A_OPENMSX_IMAGE", "openmsx-master")
 
 # Where the active area is in the raw screenshot, in 320x240 units (the
 # screenshots are taken at double size, 640x480, so 512 pixel modes are not
@@ -191,25 +193,95 @@ def run_scenes(scenes, decode=True):
 
 # -- I/O sequences --------------------------------------------------------
 
-PROG_ADDR = 0xD000      # Z80 program in RAM
+PROG_ADDR = 0xC000      # Z80 program in RAM (up to READS_ADDR, 10 KB)
 READS_ADDR = 0xE800     # IN results
+
+
+def _set_r15(n):
+    """OUT (99h) n, 8Fh: select status register n."""
+    return bytes([0x3E, n, 0xD3, 0x99, 0x00, 0x00, 0x3E, 0x8F, 0xD3, 0x99, 0x00, 0x00])
+
+
+def _poll_s2(bit, until_set):
+    """IN A,(99h); AND bit; JR Z/NZ,loop: wait for S#2 bit set / clear."""
+    return bytes([0xDB, 0x99, 0xE6, bit, 0x28 if until_set else 0x20, 0xFA])
 
 
 def z80_program(ops):
     """Assemble the port sequence: DI, then LD A,n / OUT (p),A and
-    IN A,(p) / LD (nn),A with a few NOPs between accesses, then DI; HALT."""
+    IN A,(p) / LD (nn),A with a few NOPs between accesses, then DI; HALT.
+
+    Besides ("out", port, value) and ("in", port), the ops can be:
+      ("wait_ce",)          poll S#2 until CE = 0 (R#15 = 2, then back to 0)
+      ("wait_tr",)          poll S#2 until TR = 1 (R#15 = 2, then back to 0)
+      ("delay", n)          LD B,n; DJNZ $ (13 T-states per count)
+      ("block", port, data) OUT every byte of data, from a loop
+      ("tr_out", data)      for every byte: wait for TR, OUT (9Bh); R#15 = 0
+                            at the end (R#17 must point to R#44)
+      ("tr_in", n)          n times: wait for TR, read S#7 (stored like an
+                            IN); R#15 = 0 at the end
+    The model side (see test_model_openmsx.run_model_io) treats the waits
+    and delays as no-ops.
+    """
     code = bytearray([0xF3])                            # DI
     n_reads = 0
+
+    def here():
+        return PROG_ADDR + len(code)
+
+    def loop_over(data, body):
+        """LD HL,data; LD B,len; body (uses (HL)); INC HL; DJNZ; data after a JP."""
+        nonlocal code
+        start = len(code)
+        code += bytes([0x21, 0, 0, 0x06, len(data) & 0xFF])
+        top = len(code)
+        code += body + bytes([0x23]) + bytes(4)         # INC HL, NOPs
+        code += bytes([0x10, (top - (len(code) + 2)) & 0xFF])   # DJNZ top
+        after = here() + 3 + len(data)
+        code += bytes([0xC3, after & 0xFF, after >> 8])          # JP over data
+        daddr = here()
+        code += bytes(data)
+        code[start + 1] = daddr & 0xFF
+        code[start + 2] = daddr >> 8
+
     for op in ops:
-        if op[0] == "out":
+        kind = op[0]
+        if kind == "out":
             code += bytes([0x3E, op[2] & 0xFF, 0xD3, op[1]])
-        else:
+        elif kind == "in":
             addr = READS_ADDR + n_reads
             code += bytes([0xDB, op[1], 0x32, addr & 0xFF, addr >> 8])
             n_reads += 1
+        elif kind in ("wait_ce", "wait_tr"):
+            code += _set_r15(2)
+            code += _poll_s2(0x01, False) if kind == "wait_ce" else _poll_s2(0x80, True)
+            code += _set_r15(0)
+        elif kind == "delay":
+            code += bytes([0x06, op[1] & 0xFF, 0x10, 0xFE])
+        elif kind == "block":
+            assert 0 < len(op[2]) <= 256
+            loop_over(op[2], bytes([0x7E, 0xD3, op[1]]) + bytes(8))     # LD A,(HL); OUT (p),A
+        elif kind == "tr_out":
+            assert 0 < len(op[1]) <= 256
+            code += _set_r15(2)
+            loop_over(op[1], _poll_s2(0x80, True) + bytes([0x7E, 0xD3, 0x9B]) + bytes(8))
+            code += _set_r15(0)
+        elif kind == "tr_in":
+            n = op[1]
+            assert 0 < n <= 256
+            addr = READS_ADDR + n_reads
+            code += bytes([0x21, addr & 0xFF, addr >> 8, 0x06, n & 0xFF])
+            top = len(code)
+            code += _set_r15(2) + _poll_s2(0x80, True) + _set_r15(7)
+            code += bytes([0xDB, 0x99, 0x77, 0x23]) + bytes(4)     # IN A,(99h); LD (HL),A; INC HL
+            code += bytes([0x10, (top - (len(code) + 2)) & 0xFF])
+            code += _set_r15(0)
+            n_reads += n
+        else:
+            raise ValueError(f"unknown op {op}")
         code += bytes(8)                                # NOPs: VDP access time
     code += bytes([0xF3, 0x76, 0x18, 0xFE])             # DI; HALT; JR $
-    assert PROG_ADDR + len(code) < READS_ADDR, "sequence too long"
+    assert PROG_ADDR + len(code) < READS_ADDR, f"sequence too long ({len(code)} bytes)"
     return bytes(code), n_reads
 
 

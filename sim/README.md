@@ -14,7 +14,7 @@ make -C sim setup         # creates ../.venv with cocotb, pytest, numpy, pillow
 
 ```bash
 make -C sim test                        # everything (~17 min)
-make -C sim test T=host_io              # one module: host_io, timing, render, v9938_io, v9938_display, ocm
+make -C sim test T=host_io              # one module: host_io, timing, render, v9938_io, v9938_display, v9938_cmd, ocm
 make -C sim test-quick                  # one test of each area (~1 min)
 F18A_UPDATE_GOLDEN=1 make -C sim test   # regenerate sim/golden/*.png
 ```
@@ -35,6 +35,7 @@ Logs, results and captured frames go to `sim/sim_build/`
 | `tests/test_render.py` | Renders each scene (NTSC, two also PAL), compares against the model and the golden PNGs |
 | `tests/test_v9938_display.py` | V9938 mode display against the model: G1/G2/MC/G3/G4/G5 with 192/212 lines, R#23, pages, TP, sprite mode 2; sprite status; line interrupt (R#19, IE1, FH); set adjust (R#18) |
 | `tests/test_v9938_io.py` | V9938 mode CPU interface (ports 98h-9Bh, R#14, planar addresses, palette, indirect registers, status) against `v9938_model.py` |
+| `tests/test_v9938_cmd.py` | V9938 command engine: the `io_sequences.SEQUENCES_CMD` sequences (every command and logical operation in G4-G7, clipping, transfers, status) against `v9938_model.py`, comparing the reads, the whole VRAM and R#32-R#46 |
 | `tb/ocm_tb.vhd`, `tb/f18a_vdp_pll_sim.vhd` | OCM-PLD VDP wrapper testbench (CLK21M, frames sampled on CLK21M) and PLL model |
 | `tests/test_ocm.py` | OCM-PLD wrapper: dot clocks, bus, MSX2 register writes, PAL/NTSC selection, 15/31 kHz line timing and image |
 
@@ -50,13 +51,20 @@ Known deviations from the 9918A are listed in `KNOWN_BUGS` in
 ## V9938 reference model and openMSX oracle
 
 `v9938_model.py` is a functional V9938 model (all display modes, sprite
-modes 1 and 2, 192 / 212 lines, R#23, the CPU interface with R#14, 9Ah, 9Bh
-and the status registers) following openMSX.  It is checked against openMSX
+modes 1 and 2, 192 / 212 lines, R#23, the CPU interface with R#14, 9Ah, 9Bh,
+the status registers and, in `v9938_cmd.py`, the command engine) following
+openMSX.  It is checked against openMSX
 itself:
 
 ```bash
-F18A_OPENMSX=1 ../.venv/bin/python -m pytest -v test_model_openmsx.py   # ~30 s
+F18A_OPENMSX=1 ../.venv/bin/python -m pytest -v test_model_openmsx.py   # ~3 min
 ```
+
+The oracle is openMSX built from the current git master (image
+`openmsx-master`, `openmsx/Dockerfile.master`), because the command engine
+follows master: openMSX 20.0 (the Debian package, image `openmsx-headless`
+from `openmsx/Dockerfile`, selected with `F18A_OPENMSX_IMAGE`) differs in
+BD after SRCH / S#9 and in LINE going above line 0 (see `v9938_cmd.py`).
 
 `openmsx_oracle.py` runs openMSX (free C-BIOS ROMs) headless in Docker with
 Xvfb on the host `F18A_OPENMSX_HOST` (default `rampa@ea5iue-laptop.local`,

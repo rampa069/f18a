@@ -192,6 +192,7 @@ architecture rtl of f18a_cpu is
       st_read_status, st_setup_addr,
       st_reg_write, st_prefetch, st_save_prefetch,
       st_v38_pal, st_v38_ind, st_v38_rd,
+      st_cmd_pause, st_cmd_acc, st_cmd_rd, st_cmd_wait,
       st_wait_eoc);
 
    signal io_state   : state_io_type;
@@ -272,6 +273,24 @@ architecture rtl of f18a_cpu is
    signal v38_paddr     : std_logic_vector(0 to 5);
    signal v38_pdata     : std_logic_vector(0 to 11);
    signal vaddr_log     : std_logic_vector(0 to 16);  -- logical VRAM address
+
+   -- V9938 command engine.
+   signal cmd_reg_we    : std_logic := '0';           -- R#32-R#46 written
+   signal cmd_reg_idx   : unsigned(0 to 3);
+   signal cmd_reg_din   : std_logic_vector(0 to 7);
+   signal cmd_s7_rd     : std_logic := '0';
+   signal cmd_s9_rd     : std_logic := '0';
+   signal cmd_tr, cmd_bd, cmd_ce, cmd_busy : std_logic;
+   signal cmd_col       : std_logic_vector(0 to 7);
+   signal cmd_asx       : std_logic_vector(0 to 8);
+   signal cmd_req       : std_logic;
+   signal cmd_we        : std_logic;
+   signal cmd_addr      : std_logic_vector(0 to 16);
+   signal cmd_dout      : std_logic_vector(0 to 7);
+   signal cmd_ack       : std_logic;
+   signal cmd_rvalid    : std_logic;
+   signal v38_bmp_s     : std_logic;
+   signal v38_bmode_s   : std_logic_vector(0 to 1);
 
    -- Status register output, depends on status register pointer R15
    signal status_reg    : std_logic_vector(0 to 7);
@@ -433,7 +452,7 @@ begin
 
 
    -- The status register number determines which status is returned.
-   process (v9938, v38_reg, vr, hr,
+   process (v9938, v38_reg, vr, hr, cmd_tr, cmd_bd, cmd_ce, cmd_col, cmd_asx,
    reg15sreg_num, intr_ff, sp_5s_ff, sp_c_ff, sp_5th_reg, horz_ff,
    gpu_status, gpu_running, scanline, reg_val, blank,
    cnt_nano_sr, cnt_micro_sr, cnt_milli_sr, cnt_sec_sr)
@@ -452,12 +471,18 @@ begin
             status_reg <= "0000000" & horz_ff;
             clear_sr1 <= '1';
          when X"2" =>   -- TR, VR, HR, BD, 1, 1, EO, CE
-            status_reg <= '1' & vr & hr & "011" & "00";
-         when X"4" | X"9" =>
+            status_reg <= cmd_tr & vr & hr & cmd_bd & "11" & '0' & cmd_ce;
+         when X"4" =>
             status_reg <= X"FE";
          when X"6" =>
             status_reg <= X"FC";
-         when X"3" | X"5" | X"7" | X"8" =>
+         when X"7" =>   -- command color
+            status_reg <= cmd_col;
+         when X"8" =>   -- SRCH / command X
+            status_reg <= cmd_asx(1 to 8);
+         when X"9" =>
+            status_reg <= "1111111" & cmd_asx(0);
+         when X"3" | X"5" =>
             status_reg <= X"00";
          when others =>
             status_reg <= X"FF";
@@ -678,6 +703,8 @@ begin
          inc_en <= '0';       -- VRAM address counter enable
          pram_we <= '0';      -- PRAM write enable
          pram_inc_en <= '0';  -- PRAM address counter enable
+         cmd_s7_rd <= '0';
+         cmd_s9_rd <= '0';
 
          -- Always ask the GPU to pause unless idle or waiting for the EOC.
          gpu_pause_req <= '1';
@@ -742,6 +769,37 @@ begin
                   io_state <= st_gpu_pause;
                   gpu_pause_req <= '1';
                end if;
+            elsif cmd_req = '1' then
+               -- V9938 command engine VRAM access, after the CPU.
+               io_state <= st_cmd_pause;
+               gpu_pause_req <= '1';
+            end if;
+
+         when st_cmd_pause =>
+
+            if gpu_pause_ack = '1' then
+               io_state <= st_cmd_acc;
+               gpu_pause <= '1';
+            end if;
+
+         when st_cmd_acc =>
+
+            -- The engine address and data are on the VRAM port (cmd_ack).
+            io_state <= st_cmd_rd;
+
+         when st_cmd_rd =>
+
+            -- Read data on vdin (cmd_rvalid).
+            io_state <= st_cmd_wait;
+
+         when st_cmd_wait =>
+
+            -- Keep the GPU paused while the engine works, unless the CPU
+            -- needs the port.
+            if csw = '0' or csr = '0' or cmd_busy = '0' then
+               io_state <= st_idle;
+            elsif cmd_req = '1' then
+               io_state <= st_cmd_acc;
             end if;
 
          when st_gpu_pause =>
@@ -858,6 +916,9 @@ begin
                -- Reset the horz interrupt on status read.
                horz_ff <= '0';
             end if;
+
+            if v9938 = '1' and v38_reg(15)(4 to 7) = X"7" then cmd_s7_rd <= '1'; end if;
+            if v9938 = '1' and v38_reg(15)(4 to 7) = X"9" then cmd_s9_rd <= '1'; end if;
 
          when st_setup_addr =>
 
@@ -1276,15 +1337,16 @@ begin
 
 
    -- VRAM interface.  ramaddr is fetched every clock cycle.
-   vwe <= we when gpu_pause = '1' else gpu_we;
+   vwe <= cmd_we when io_state = st_cmd_acc else we when gpu_pause = '1' else gpu_we;
    -- 17-bit address: R14 (V9938) and the address counter.  In G6 / G7 the
    -- V9938 VRAM is two interleaved banks: physical = logical rotated right.
    vaddr_log <= v38_reg(14)(5 to 7) & ramaddr when v9938 = '1' else "000" & ramaddr;
    vaddr <=
+      cmd_addr when io_state = st_cmd_acc else
       "000" & gpu_addr when gpu_pause = '0' else
       vaddr_log(16) & vaddr_log(0 to 15) when v38_planar = '1' else
       vaddr_log;
-   vdout <= cd_in when gpu_pause = '1' else gpu_dout;
+   vdout <= cmd_dout when io_state = st_cmd_acc else cd_in when gpu_pause = '1' else gpu_dout;
 
    -- PRAM interface.
    pwe <= (pram_we or v38_pwe) when gpu_pause = '1' else gpu_pwe;
@@ -1311,11 +1373,13 @@ begin
    v38_vadj     <= signed(v38_reg(18)(0 to 3)) when v9938 = '1' else (others => '0');
 
    -- Bitmap modes: G4 01100, G5 10000, G6 10100, G7 11100 (M5 M4 M3 M2 M1).
-   v38_bmp      <= v9938 and (v38_m(0) or (v38_m(1) and v38_m(2)));
-   v38_bmode    <= "00" when v38_m(0) = '0' else         -- G4
+   v38_bmp_s    <= v9938 and (v38_m(0) or (v38_m(1) and v38_m(2)));
+   v38_bmode_s  <= "00" when v38_m(0) = '0' else         -- G4
                    "01" when v38_m(2) = '0' else         -- G5
                    "10" when v38_m(1) = '0' else         -- G6
                    "11";                                 -- G7
+   v38_bmp      <= v38_bmp_s;
+   v38_bmode    <= v38_bmode_s;
    v38_r2       <= v38_reg(2);
    v38_r7       <= v38_reg(7);
 
@@ -1339,8 +1403,10 @@ begin
       if rst_n = '0' then
          v38_reg <= (others => (others => '0'));
          v38_r16_wr <= '0';
+         cmd_reg_we <= '0';
       elsif v9938 = '1' then
          v38_r16_wr <= '0';
+         cmd_reg_we <= '0';
 
          if io_state = st_reg_write then
             -- Direct write: register number and data in the address counter.
@@ -1349,6 +1415,11 @@ begin
                v38_reg(reg) <= ramaddr(6 to 13);
             end if;
             if reg = 16 then v38_r16_wr <= '1'; end if;
+            if reg >= 32 and reg <= 46 then
+               cmd_reg_we  <= '1';
+               cmd_reg_idx <= to_unsigned(reg - 32, 4);
+               cmd_reg_din <= ramaddr(6 to 13);
+            end if;
 
          elsif io_state = st_v38_ind then
             -- Indirect write: register in R17, auto increment unless bit 7.
@@ -1357,6 +1428,11 @@ begin
                v38_reg(reg) <= cd_in;
             end if;
             if reg = 16 then v38_r16_wr <= '1'; end if;
+            if reg >= 32 and reg <= 46 then
+               cmd_reg_we  <= '1';
+               cmd_reg_idx <= to_unsigned(reg - 32, 4);
+               cmd_reg_din <= cd_in;
+            end if;
             if v38_reg(17)(0) = '0' then
                v38_reg(17)(2 to 7) <= std_logic_vector(to_unsigned((reg + 1) mod 64, 6));
             end if;
@@ -1373,6 +1449,36 @@ begin
       end if;
    end process;
 
+
+   -- V9938 command engine, on VRAM port A after the CPU.
+   cmd_ack    <= '1' when io_state = st_cmd_acc else '0';
+   cmd_rvalid <= '1' when io_state = st_cmd_rd else '0';
+
+   inst_cmd : entity work.f18a_v9938_cmd
+   port map (
+      clk         => clk,
+      rst_n       => rst_n,
+      mode_ok     => v38_bmp_s,
+      bmode       => v38_bmode_s,
+      reg_we      => cmd_reg_we,
+      reg_idx     => cmd_reg_idx,
+      reg_din     => cmd_reg_din,
+      s7_rd       => cmd_s7_rd,
+      s9_rd       => cmd_s9_rd,
+      tr          => cmd_tr,
+      bd          => cmd_bd,
+      ce          => cmd_ce,
+      busy        => cmd_busy,
+      col         => cmd_col,
+      asx         => cmd_asx,
+      mem_req     => cmd_req,
+      mem_we      => cmd_we,
+      mem_addr    => cmd_addr,
+      mem_dout    => cmd_dout,
+      mem_ack     => cmd_ack,
+      mem_rvalid  => cmd_rvalid,
+      mem_din     => vdin
+   );
 
    -- Host system data output.
    cd_o <= cd_out;

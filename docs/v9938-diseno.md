@@ -150,6 +150,14 @@ Registros R32-R46, comandos HMMC, YMMM, HMMM, HMMV, LMMC, LMCM, LMMM, LMMV,
 LINE, SRCH, PSET, POINT y STOP, operaciones lógicas (IMP, AND, OR, EOR,
 NOT y sus variantes T), flags CE/TR/BD en S#2 y S#7-S#9.
 
+**Implementado** (f18a-5pv.1.11) en `f18a_v9938_cmd.vhd`, dentro de
+`f18a_cpu`: accede al puerto A cuando la CPU no lo usa (pausa la GPU del
+F18A como la CPU). Sigue la semántica de openMSX actual (git master), que
+difiere de openMSX 20.0 en BD tras SRCH / lectura de S#9 y en LINE por
+encima de la línea 0; el modelo `sim/v9938_cmd.py` se valida contra un
+openMSX compilado de master (imagen `openmsx-master`). Los comandos en modos
+no bitmap (V9958, R#25 CMD) quedan para f18a-5pv.2.
+
 **Velocidad:** primero funcionalmente correcto y tan rápido como deje la
 BRAM (mucho más rápido que el V9938). Algunos juegos dependen de la
 velocidad real; el modelo de tiempos de openMSX (`VDPAccessSlots`) se

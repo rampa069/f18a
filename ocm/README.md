@@ -15,8 +15,8 @@ In the core's Quartus project, replace the `src/video/vdp*.vhd` files with:
 ```
 f18a_video_pkg.vhd  f18a_version.vhd  f18a_color.vhd  f18a_counters.vhd
 f18a_div32x16.vhd  f18a_single_port_ram.vhd  f18a_vram.vhd  f18a_raster.vhd
-f18a_gpu.vhd  f18a_cpu.vhd  f18a_tile_linebuf.vhd  f18a_tiles.vhd
-f18a_sprites.vhd  f18a_core.vhd
+f18a_gpu.vhd  f18a_v9938_cmd.vhd  f18a_cpu.vhd  f18a_tile_linebuf.vhd
+f18a_bitmap.vhd  f18a_tiles.vhd  f18a_sprites.vhd  f18a_core.vhd
 ocm/f18a_vdp_pll.v  ocm/f18a_vdp_ocm.vhd
 ```
 

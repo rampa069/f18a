@@ -95,3 +95,93 @@ def test_io(seq):
     # The initial palette is the BIOS one; compare the entries written.
     for n in sorted(model.palette_written):
         assert o_pal[n] == model.palette[n], f"palette {n}: openMSX {o_pal[n]} model {model.palette[n]}"
+
+
+def run_model_cmd(ops, regs, v9958=False):
+    """Run a command engine sequence on the model: returns the reads, the
+    status register each read came from (None for VRAM) and the model.  The
+    waits of the Z80 program are no-ops here (the model runs a command at
+    once), but their R#15 writes and status reads are done like the Z80."""
+    model = vm.V9938(regs=list(regs) + [0] * (47 - len(regs)))
+    model.v9958 = v9958
+    model.read_status()
+    reads, sources = [], []
+
+    def out(port, v):
+        {0x98: model.write_data, 0x99: model.write_ctrl,
+         0x9A: model.write_palette, 0x9B: model.write_indirect}[port](v)
+
+    def r15(n):
+        out(0x99, n)
+        out(0x99, 0x8F)
+
+    def read(port):
+        sources.append(model.regs[15] & 0x0F if port == 0x99 else None)
+        reads.append({0x98: model.read_data, 0x99: model.read_status}[port]())
+
+    for op in [("out", 0x99, regs[1]), ("out", 0x99, 0x81)] + list(ops):
+        kind = op[0]
+        if kind == "out":
+            out(op[1], op[2])
+        elif kind == "in":
+            read(op[1])
+        elif kind in ("wait_ce", "wait_tr"):
+            r15(2)
+            model.read_status()
+            r15(0)
+        elif kind == "delay":
+            pass
+        elif kind == "block":
+            for v in op[2]:
+                out(op[1], v)
+        elif kind == "tr_out":
+            r15(2)
+            for v in op[1]:
+                model.read_status()
+                out(0x9B, v)
+            r15(0)
+        elif kind == "tr_in":
+            for _ in range(op[1]):
+                r15(2)
+                model.read_status()
+                r15(7)
+                read(0x99)
+            r15(0)
+        else:
+            raise ValueError(op)
+    return reads, sources, model
+
+
+# S#2 bits that depend on the time of the read: VR, HR, EO.
+CMD_TIMING_BITS = {0: 0xFF, 1: 0x01, 2: 0x62}
+
+
+def _cmd_seqs():
+    import io_sequences
+    return list(io_sequences.SEQUENCES_CMD)
+
+
+@pytest.mark.parametrize("seq", _cmd_seqs())
+def test_cmd(seq):
+    import io_sequences
+    import openmsx_oracle as oracle
+    ops = io_sequences.SEQUENCES_CMD[seq]()
+    regs = [0, 0x40, 0, 0, 0, 0, 0, 0, 0x08]
+    v9958 = seq in io_sequences.V9958_SEQUENCES
+    o_reads, o_vram, o_regs, _ = oracle.run_io(ops, regs, machine="C-BIOS_MSX2+" if v9958 else "C-BIOS_MSX2")
+    m_reads, sources, model = run_model_cmd(ops, regs, v9958)
+
+    errors = []
+    assert len(o_reads) == len(m_reads)
+    for k, (o, m, sn) in enumerate(zip(o_reads, m_reads, sources)):
+        mask = 0xFF if sn is None else 0xFF & ~CMD_TIMING_BITS.get(sn, 0)
+        if o & mask != m & mask:
+            errors.append(f"read {k} (S#{sn}): openMSX {o:02x} model {m:02x}")
+    for r in range(47):
+        if o_regs[r] != model.regs[r]:
+            errors.append(f"R#{r}: openMSX {o_regs[r]:02x} model {model.regs[r]:02x}")
+    diff = [a for a in range(vm.VRAM_SIZE) if o_vram[a] != model.vram[a]]
+    if diff:
+        errors.append(f"VRAM differs at {len(diff)} addresses: " + ", ".join(
+            f"{a:05x} openMSX {o_vram[a]:02x} model {model.vram[a]:02x}" for a in diff[:12]))
+    assert not errors, f"{seq}:\n" + "\n".join(errors[:40])
