@@ -166,3 +166,37 @@ SCENES = {
     "g7_212": lambda: scene("G7", 12, lines212=True),
     "g7_scroll": lambda: scene("G7", 13, scroll=100),
 }
+
+
+# -- V9958 (MSX2+) scenes: horizontal scroll ----------------------------------
+
+def v9958(sc, r25=0, r26=0, r27=0, r2=None):
+    vram, regs, pal = sc
+    regs = list(regs) + [0] * (28 - len(regs))
+    regs[25], regs[26], regs[27] = r25, r26, r27
+    if r2 is not None:
+        regs[2] = r2
+    return vram, regs, pal
+
+
+def g1_two_pages(sc):
+    """G1 with the name table on an odd page (R#2 = 26h: 9800h); the even
+    page 1800h has other names."""
+    vram, regs, pal = sc
+    vram[0x9800:0x9B00] = vram[0x1800:0x1B00]
+    vram[0x1800:0x1B00] = bytes(reversed(vram[0x1800:0x1B00]))
+    return vram, regs, pal
+
+
+V9958_SCENES = {
+    "h_g4": lambda: v9958(scene("G4", 40), r26=5, r27=3),
+    "h_g4_sp2": lambda: v9958(page1(scene("G4", 41, lines212=True)), r25=0x01, r26=0x25),
+    "h_g4_sp2_p0": lambda: v9958(page1(scene("G4", 42)), r25=0x01, r26=0x07, r27=6),
+    "h_g5_msk": lambda: v9958(scene("G5", 43), r25=0x02, r26=7, r27=5),
+    "h_g6_sp2": lambda: v9958(scene("G6", 44), r25=0x01, r26=0x23, r27=2, r2=0x3F),
+    "h_g7": lambda: v9958(scene("G7", 45, scroll=30), r26=9, r27=1),
+    "h_g1": lambda: v9958(scene("G1", 46), r26=3, r27=2),
+    "h_g1_sp2": lambda: v9958(g1_two_pages(scene("G1", 47)), r25=0x01, r26=0x3A, r27=4, r2=0x26),
+    "h_t1_msk": lambda: v9958(scene("T1", 48), r25=0x02, r27=4),
+    "h_g3_sprites": lambda: v9958(scene("G3", 49), r26=1, r27=6),
+}

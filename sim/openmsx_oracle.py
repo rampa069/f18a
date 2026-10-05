@@ -118,15 +118,14 @@ def _run(scenes, workdir):
 
 # -- Color decoding -------------------------------------------------------
 
-_DAC = None   # openMSX 3-bit level -> 8-bit value, per channel
-_G7 = None    # openMSX RGB -> G7 color code
+_DAC = {}     # per machine: openMSX 3-bit level -> 8-bit value, per channel
+_G7 = {}      # per machine: openMSX RGB -> G7 color code (the V9958 DAC differs)
 
 
-def _calibrate():
+def _calibrate(machine="C-BIOS_MSX2"):
     """Learn the openMSX palette DAC: show the 8 levels of each channel."""
-    global _DAC
-    if _DAC is not None:
-        return _DAC
+    if machine in _DAC:
+        return _DAC[machine]
     pal = [(k, 0, 0) for k in range(8)] + [(0, k, 7 - k) for k in range(8)]
     vram = bytearray(vm.VRAM_SIZE)
     for y in range(212):
@@ -134,7 +133,7 @@ def _calibrate():
             c = xb // 8            # 16 stripes of 16 pixels
             vram[y * 128 + xb] = (c << 4) | c
     regs = [0x06, 0x40, 0x1F, 0, 0, 0, 0, 0x00, 0x2A, 0x80]   # G4, TP
-    shot = run_scenes([Scene("calib", vram, regs, pal)], decode=False)["calib"].raw
+    shot = run_scenes([Scene("calib", vram, regs, pal, machine)], decode=False)["calib"].raw
     y = (RAW_Y0[212] + 100) * 2
     dac = {"r": {}, "g": {}, "b": {}}
     for c in range(16):
@@ -144,34 +143,34 @@ def _calibrate():
         else:
             dac["g"][c - 8] = int(g)
             dac["b"][7 - (c - 8)] = int(b)
-    _DAC = dac
+    _DAC[machine] = dac
     return dac
 
 
-def _calibrate_g7():
+def _calibrate_g7(machine="C-BIOS_MSX2"):
     """Learn the G7 colors: one line with the 256 codes."""
-    global _G7
-    if _G7 is not None:
-        return _G7
+    if machine in _G7:
+        return _G7[machine]
     vram = bytearray(vm.VRAM_SIZE)
     for y in range(212):
         for x in range(256):
             vram[vm.planar(y * 256 + x)] = x
     regs = [0x0E, 0x40, 0x1F, 0, 0, 0, 0, 0x00, 0x2A, 0x80]   # G7, TP
-    shot = run_scenes([Scene("calg7", vram, regs)], decode=False)["calg7"].raw
+    shot = run_scenes([Scene("calg7", vram, regs, machine=machine)], decode=False)["calg7"].raw
     row = shot[(RAW_Y0[212] + 100) * 2]
-    _G7 = {tuple(int(v) for v in row[(RAW_X0 + x) * 2]): x for x in range(256)}
-    assert len(_G7) == 256, f"G7 colors not unique: {len(_G7)}"
-    return _G7
+    lut = {tuple(int(v) for v in row[(RAW_X0 + x) * 2]): x for x in range(256)}
+    assert len(lut) == 256, f"G7 colors not unique: {len(lut)}"
+    _G7[machine] = lut
+    return lut
 
 
 def _decode(raw, scene):
     model = vm.V9938(scene.vram, scene.regs, scene.palette)
     lines = model.lines
     if model.mode == vm.G7:
-        lut = _calibrate_g7()
+        lut = _calibrate_g7(scene.machine)
     else:
-        dac = _calibrate()
+        dac = _calibrate(scene.machine)
         lut = {}
         for idx, (r, g, b) in enumerate(scene.palette):
             lut.setdefault((dac["r"][r], dac["g"][g], dac["b"][b]), idx)

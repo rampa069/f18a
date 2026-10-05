@@ -204,3 +204,31 @@ def test_collision(name):
     m = [model.status[k] for k in range(7)]
     assert (o[0] & 0x20, o[3:7]) == (m[0] & 0x20, m[3:7]), \
         f"{name}: collision S#0 {o[0]:02x} S#3-6 {o[3:7]}, model S#0 {m[0]:02x} S#3-6 {m[3:7]}"
+
+
+
+@pytest.fixture(scope="module")
+def shots58():
+    import openmsx_oracle as oracle
+    scenes = []
+    for name, make in v9938_scenes.V9958_SCENES.items():
+        vram, regs, pal = make()
+        scenes.append(oracle.Scene(name, vram, regs, pal, machine="C-BIOS_MSX2+"))
+    return oracle.run_scenes(scenes)
+
+
+@pytest.mark.parametrize("name", list(v9938_scenes.V9958_SCENES))
+def test_scene58(shots58, name):
+    """V9958 scenes (horizontal scroll) on the MSX2+ machine."""
+    vram, regs, pal = v9938_scenes.V9958_SCENES[name]()
+    model = vm.V9938(vram, regs, pal)
+    model.v9958 = True
+    exp = model.render().astype(np.int32)
+    got = shots58[name].active
+    diff = got != exp
+    if diff.any():
+        ys, xs = np.nonzero(diff)
+        raise AssertionError(
+            f"{name} ({vm.MODE_NAMES[model.mode]}): {len(ys)} samples differ, "
+            f"lines {ys.min()}..{ys.max()}, x {xs.min()}..{xs.max()}; "
+            f"first ({xs[0]},{ys[0]}) openMSX {got[ys[0], xs[0]]} model {exp[ys[0], xs[0]]}")

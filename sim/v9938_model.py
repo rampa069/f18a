@@ -336,7 +336,7 @@ class V9938:
                         c = bg
                     x = 2 * TEXT_OFFSET_V9938 + col * 12 + px * 2
                     out[x: x + 2] = c
-            return out
+            return self._text_scroll(out)
         if mode == T2:
             fg, tbg = self.regs[7] >> 4, self.regs[7] & 0x0F
             # Blink (openMSX CharacterConverter::renderText2): characters
@@ -359,31 +359,93 @@ class V9938:
                         if c == 0 and tp:
                             c = bg
                     out[2 * TEXT_OFFSET_V9938 + col * 6 + px] = c
-            return out
+            return self._text_scroll(out)
 
-        if mode in BITMAP_MODES:
-            pix = self._bitmap_line(y)
-        else:
-            pix = self._char_line(y)
+        line_fn = self._bitmap_line if mode in BITMAP_MODES else self._char_line
+        pix = line_fn(y)
+        if self.v9958 and (self.regs[26] & 0x1F or self.regs[25] & 0x01):
+            pix = self._hscroll(pix, line_fn, y)
 
         if mode in (G5, G6):
             pix512 = pix
         else:
             pix512 = np.repeat(pix, 2)
+        pix512 = self._shift_low(pix512, out)
         if tp and mode != G7:
             # Background color 0 shows the border (G7 has no transparency).
             pix512 = np.where(pix512 == 0, out, pix512)
 
         # Sprites over the background: a sprite pixel is never transparent
         # once drawn (in G5 each half takes 2 bits of the sprite color).
-        return self._draw_sprites(pix512.astype(np.uint16), line_sprites)
+        return self._left_border(self._draw_sprites(pix512.astype(np.uint16), line_sprites), out)
 
-    def _char_line(self, y):
+    def _text_scroll(self, out):
+        """V9958 in the text modes: only R#27 moves the text (no R#26); with
+        MSK the first 8 pixels of the text area are border."""
+        if not self.v9958:
+            return out
+        border = self.border_line()
+        low = self.regs[27] & 7
+        if low:
+            out = self._shift_low(out, border)
+            # The text area still ends 240 pixels after its start.
+            end = 2 * (TEXT_OFFSET_V9938 + 240) if self.mode == T1 else 2 * TEXT_OFFSET_V9938 + 480
+            out[end:] = border[end:]
+        if self.regs[25] & 0x02:
+            out = out.copy()
+            n = 2 * (TEXT_OFFSET_V9938 + 8)
+            out[:n] = border[:n]
+        return out
+
+    def _shift_low(self, line, border):
+        """V9958 R#27: the background moves R#27 pixels to the right; those
+        pixels show the border (openMSX getLeftBackground)."""
+        low = self.regs[27] & 7 if self.v9958 else 0
+        if not low:
+            return line
+        out = np.empty_like(line)
+        out[2 * low:] = line[: len(line) - 2 * low]
+        out[: 2 * low] = border[: 2 * low]
+        return out
+
+    def _hscroll(self, pix, line_fn, y):
+        """V9958 R#26: the background moves 8 * R#26 pixels to the left; with
+        R#25 SP2 and an odd page in R#2 it continues into the other page of
+        the pair, starting with the page of R#26 bit 5 (openMSX
+        SDLRasterizer::drawDisplay, CharacterConverter::getNamePtr)."""
+        w = len(pix)
+        hs = 8 * (w // 256) * (self.regs[26] & 0x1F)
+        multi = self.regs[25] & 0x01 and self.regs[2] & 0x20
+        if multi:
+            rows = [line_fn(y, even=True), pix]
+            p1 = (self.regs[26] >> 5) & 1
+        else:
+            rows, p1 = [pix, pix], 0
+        out = np.empty_like(pix)
+        for x in range(w):
+            src = x + hs
+            out[x] = rows[p1][src] if src < w else rows[p1 ^ 1][src - w]
+        return out
+
+    def _left_border(self, out, border):
+        """V9958: the R#27 pixels at the left (and with R#25 MSK the first 8)
+        are border, sprites included (openMSX PixelRenderer: the display
+        area starts at getLeftBackground / getLeftBorder)."""
+        if not self.v9958:
+            return out
+        n = max(2 * (self.regs[27] & 7), 16 if self.regs[25] & 0x02 else 0)
+        if n:
+            out = out.copy()
+            out[:n] = border[:n]
+        return out
+
+    def _char_line(self, y, even=False):
         mode = self.mode
         pix = np.zeros(256, dtype=np.uint16)
         row, l = y // 8, y & 7
+        nbase = self.name_base() & ~0x8000 if even else self.name_base()
         for col in range(32):
-            name = self.vram_read(masked(self.name_base(), row * 32 + col, 10))
+            name = self.vram_read(masked(nbase, row * 32 + col, 10))
             if mode == G1:
                 bits = self.vram_read(masked(self.pattern_base(), name * 8 + l, 11))
                 color = self.vram_read(masked(self.color_base(), name >> 3, 6))
@@ -401,7 +463,7 @@ class V9938:
                 pix[col * 8 + px] = fg if bits & (0x80 >> px) else bg
         return pix
 
-    def _bitmap_line(self, y):
+    def _bitmap_line(self, y, even=False):
         """One display line of G4-G7: 256 (G4, G7) or 512 (G5, G6) codes."""
         mode = self.mode
         # Even / odd page (openMSX VDP::getEvenOddMask): line bit 8 (the odd
@@ -409,6 +471,8 @@ class V9938:
         # (S#2 EO = 0), or while the R#13 blink state is on.
         eo_mask = ((~self.regs[9] & 4) << 6 | (self.status[2] & 2) << 7) & ((not self.blink_state) << 8)
         base = self.name_base() & (~(0x100 << 7) | (eo_mask << 7))
+        if even:
+            base &= ~(0x100 << 7)            # V9958 multi page: the even page
         if mode in PLANAR_MODES:
             vline = (base >> 7) & (0x100 | y)
             data = [self.vram[self.phys(planar(vline * 256 + i))] for i in range(256)]
