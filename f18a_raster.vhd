@@ -63,7 +63,9 @@ entity f18a_raster is
       raster_y    : out unsigned(0 to 9);
       y_tick      : out std_logic;       -- last pixel of a line
       y_max       : out std_logic;       -- first line after the picture
-      blank       : out std_logic
+      blank       : out std_logic;       -- hblank or vblank
+      hblank      : out std_logic;       -- '1' outside the visible pixels of a line
+      vblank      : out std_logic        -- '1' outside the picture lines
    );
 end f18a_raster;
 
@@ -83,6 +85,8 @@ architecture rtl of f18a_raster is
    signal hsync_r       : std_logic := '0';
    signal vsync_r       : std_logic := '0';
    signal blank_r       : std_logic := '1';
+   signal hblank_r      : std_logic := '1';
+   signal vblank_r      : std_logic := '1';
    signal field_r       : std_logic := '0';
 
 begin
@@ -169,6 +173,16 @@ begin
       else
          blank_r <= '1';
       end if;
+      if hcounter >= H_VISIBLE_FIRST and hcounter < H_VISIBLE_END then
+         hblank_r <= '0';
+      else
+         hblank_r <= '1';
+      end if;
+      if vcounter < vsize_r then
+         vblank_r <= '0';
+      else
+         vblank_r <= '1';
+      end if;
    end if; end process;
 
    hsync_n   <= not hsync_r;
@@ -177,6 +191,8 @@ begin
    -- horizontal lock.
    csync_n   <= not (hsync_r xor vsync_r);
    blank     <= blank_r;
+   hblank    <= hblank_r;
+   vblank    <= vblank_r;
    field     <= field_r;
 
    raster_x  <= hcounter;

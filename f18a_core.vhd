@@ -97,6 +97,8 @@ entity f18a_core is
       vsync_n_o            : out std_logic;
       csync_n_o            : out std_logic;  -- composite sync for RGB / SCART
       blank_o              : out std_logic;  -- '1' outside the picture (not display enable)
+      hblank_o             : out std_logic;  -- the same, horizontal only
+      vblank_o             : out std_logic;  -- the same, vertical only
       r9_pal_o             : out std_logic;  -- V9938 mode: R#9 NT ('1' = PAL), to drive pal_i
       cmd_fast_i           : in  std_logic := '1';  -- V9938 command engine: '1' fast, '0' V9938 timing
       interlace_o          : out std_logic;  -- V9938 mode: R#9 IL (interlaced output)
@@ -124,6 +126,8 @@ architecture rtl of f18a_core is
 
    -- Output video registers.
    signal blank_r          : std_logic := '1';
+   signal hblank_r, vblank_r : std_logic := '1';
+   signal hblank_s, vblank_s : std_logic;
    signal hsync_r          : std_logic := '1';
    signal vsync_r          : std_logic := '1';
    signal csync_r          : std_logic := '1';
@@ -502,7 +506,9 @@ begin
       raster_y       => raster_y_s,
       y_tick         => y_tick_s,
       y_max          => y_max_s,
-      blank          => blank_s
+      blank          => blank_s,
+      hblank         => hblank_s,
+      vblank         => vblank_s
    );
 
 
@@ -783,6 +789,8 @@ begin
    -- Register the video outputs.
    process (clk_pix_i) begin if rising_edge(clk_pix_i) then
       blank_r  <= blank_s;
+      hblank_r <= hblank_s;
+      vblank_r <= vblank_s;
       hsync_r  <= hsync_s;
       vsync_r  <= vsync_s;
       csync_r  <= csync_s;
@@ -792,6 +800,8 @@ begin
    end if; end process;
 
    blank_o     <= blank_r;
+   hblank_o    <= hblank_r;
+   vblank_o    <= vblank_r;
    hsync_n_o   <= hsync_r;
    vsync_n_o   <= vsync_r;
    csync_n_o   <= csync_r;

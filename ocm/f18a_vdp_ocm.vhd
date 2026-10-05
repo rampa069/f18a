@@ -119,6 +119,11 @@ entity vdp is
 
       blank_o           : out std_logic;
       interlacemode     : out std_logic;
+      -- Not in the OCM VDP: separate blanks for an HDMI / MiST video output
+      -- (mist_video HBlank / VBlank).  An emsx_top that does not have them
+      -- leaves them open.
+      hblank_o          : out std_logic;
+      vblank_o          : out std_logic;
 
       -- Display resolution (0=15KHz, 1=31KHz)
       dispreso          : in  std_logic;
@@ -187,6 +192,10 @@ architecture rtl of vdp is
    -- 15KHz video from the F18A, registered in the CLK21M domain.
    signal red15_s, grn15_s, blu15_s : std_logic_vector(0 to 7);   -- 8 bits, 6 are used
    signal hs15_n_s, vs15_n_s, cs15_n_s, blank15_s : std_logic;
+   signal hblank15_s, vblank15_s : std_logic;
+   signal hblank15_r, vblank15_r : std_logic := '1';
+   signal vb31_r        : std_logic := '1';
+   signal vid_hblank_r, vid_vblank_r : std_logic := '1';
    signal rgb15_r       : std_logic_vector(17 downto 0) := (others => '0');
    signal hs15_n_r      : std_logic := '1';
    signal vs15_n_r      : std_logic := '1';
@@ -274,6 +283,8 @@ begin
       vsync_n_o      => vs15_n_s,
       csync_n_o      => cs15_n_s,
       blank_o        => blank15_s,
+      hblank_o       => hblank15_s,
+      vblank_o       => vblank15_s,
       r9_pal_o       => r9_pal_core_s,
       cmd_fast_i     => vdpspeedmode,   -- '0': V9938 command timing, '1': fast
       interlace_o    => interlace_s,
@@ -413,6 +424,8 @@ begin
          vs15_n_r  <= vs15_n_s;
          cs15_n_r  <= cs15_n_s;
          blank15_r <= blank15_s;
+         hblank15_r <= hblank15_s;
+         vblank15_r <= vblank15_s;
       end if;
    end process;
 
@@ -426,6 +439,7 @@ begin
             in_x_r    <= (others => '0');
             in_bank_r <= not in_bank_r;
             vs31_r    <= vs15_n_r;
+            vb31_r    <= vblank15_r;
          elsif in_x_r /= 2047 then
             in_x_r <= in_x_r + 1;
          end if;
@@ -459,6 +473,8 @@ begin
          if dispreso = '0' then
             vid_rgb_r   <= rgb15_r;
             vid_blank_r <= blank15_r;
+            vid_hblank_r <= hblank15_r;
+            vid_vblank_r <= vblank15_r;
             vid_hs_n_r  <= hs15_n_r;
             vid_vs_n_r  <= vs15_n_r;
             vid_cs_n_r  <= cs15_n_r;
@@ -469,6 +485,8 @@ begin
                vid_rgb_r <= rd31_r(17 downto 0);
             end if;
             vid_blank_r <= rd31_r(18);
+            vid_hblank_r <= rd31_r(18);
+            vid_vblank_r <= vb31_r;
             vid_hs_n_r  <= hs31_n_d_r;
             vid_vs_n_r  <= vs31_d_r;
             vid_cs_n_r  <= not ((not hs31_n_d_r) xor (not vs31_d_r));
@@ -483,5 +501,7 @@ begin
    pvideovs_n <= vid_vs_n_r;
    pvideocs_n <= vid_cs_n_r;
    blank_o    <= vid_blank_r;
+   hblank_o   <= vid_hblank_r;
+   vblank_o   <= vid_vblank_r;
 
 end rtl;

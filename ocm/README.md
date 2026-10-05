@@ -38,6 +38,7 @@ mode fits in internal RAM.
 | `PVIDEODHCLK`, `PVIDEODLCLK` | Same 4-phase sequence as the original VDP. **Required**: `emsx_top` uses them to schedule CPU / VDP SDRAM slots |
 | `PVIDEOR/G/B` | 6-bit RGB: the 6 high bits of the core 8-bit color (the 9918A 4-bit palette repeated, the V9938 3-bit levels scaled exactly) |
 | `PVIDEOHS_N`, `PVIDEOVS_N`, `PVIDEOCS_N`, `BLANK_O` | Syncs and blank, active low syncs, `BLANK_O` = '1' outside the picture |
+| `HBLANK_O`, `VBLANK_O` | Not in the OCM VDP: the horizontal and vertical blanks apart (for `mist_video` `HBlank` / `VBlank`, HDMI DE); left open by an `emsx_top` without them. At 31 kHz `HBLANK_O` is the whole blank |
 | `DISPRESO` | '0' = 15 kHz (1368 `CLK21M` cycles per line, like the V9938), '1' = 31 kHz through a line doubler (684 cycles per line) |
 | `NTSC_PAL_TYPE`, `FORCED_V_MODE` | PAL / NTSC: R#9 bit 1 (NT) when `NTSC_PAL_TYPE` = '1' (in V9938 mode read from the core, so 9Bh writes count too), otherwise `FORCED_V_MODE`, like the original. NTSC 262 lines 59.9 Hz, PAL 313 lines 50.1 Hz |
 | `INTERLACEMODE` | R#9 IL (V9938 mode); the odd fields are half a line lower |
