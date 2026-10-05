@@ -164,9 +164,46 @@ def _calibrate_g7(machine="C-BIOS_MSX2"):
     return lut
 
 
+_DAC5 = {}    # per machine: 8-bit value -> V9958 5-bit level
+
+
+def _calibrate_yjk(machine="C-BIOS_MSX2+"):
+    """Learn the 32 levels of the V9958 DAC: G7 + YJK with J = K = 0, so
+    R = G = Y, Y ramping 0-31 along the line (two groups per level)."""
+    if machine in _DAC5:
+        return _DAC5[machine]
+    vram = bytearray(vm.VRAM_SIZE)
+    for y in range(212):
+        for x in range(256):
+            vram[vm.planar(y * 256 + x)] = (x // 8) << 3
+    regs = [0x0E, 0x40, 0x1F, 0, 0, 0, 0, 0x00, 0x2A, 0x80] + [0] * 15 + [0x08]   # R#25 YJK
+    shot = run_scenes([Scene("calyjk", vram, regs, machine=machine)], decode=False)["calyjk"].raw
+    row = shot[(RAW_Y0[212] + 100) * 2]
+    inv = {}
+    for level in range(32):
+        r = int(row[(RAW_X0 + level * 8 + 4) * 2][0])
+        inv[r] = level
+    assert len(inv) == 32, f"V9958 DAC levels not unique: {len(inv)}"
+    _DAC5[machine] = inv
+    return inv
+
+
 def _decode(raw, scene):
     model = vm.V9938(scene.vram, scene.regs, scene.palette)
+    model.v9958 = scene.machine == "C-BIOS_MSX2+"
     lines = model.lines
+    if model.yjk:
+        inv = _calibrate_yjk(scene.machine)
+
+        def code(px):
+            r, g, b = (inv.get(int(v), -1) for v in px)
+            return -1 if min(r, g, b) < 0 else vm.YJK_RGB | (r << 10) | (g << 5) | b
+        active = np.full((lines, 512), -1, dtype=np.int32)
+        for line in range(lines):
+            row = raw[(RAW_Y0[lines] + line) * 2]
+            for x in range(512):
+                active[line, x] = code(row[RAW_X0 * 2 + x])
+        return active, code(raw[4, 4])
     if model.mode == vm.G7:
         lut = _calibrate_g7(scene.machine)
     else:

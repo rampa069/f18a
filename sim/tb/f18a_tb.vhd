@@ -39,6 +39,9 @@ entity f18a_tb is
       red_o          : out std_logic_vector(0 to 3);
       grn_o          : out std_logic_vector(0 to 3);
       blu_o          : out std_logic_vector(0 to 3);
+      red8_o         : out std_logic_vector(0 to 7);
+      grn8_o         : out std_logic_vector(0 to 7);
+      blu8_o         : out std_logic_vector(0 to 7);
       hsync_n_o      : out std_logic;
       vsync_n_o      : out std_logic;
       csync_n_o      : out std_logic;
@@ -107,6 +110,9 @@ begin
       red_o          => red_s,
       grn_o          => grn_s,
       blu_o          => blu_s,
+      red8_o         => red8_o,
+      grn8_o         => grn8_o,
+      blu8_o         => blu8_o,
       hsync_n_o      => hsync_n_o,
       vsync_n_o      => vsync_s,
       csync_n_o      => csync_n_o,

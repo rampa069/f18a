@@ -224,6 +224,12 @@ def test_scene58(shots58, name):
     model = vm.V9938(vram, regs, pal)
     model.v9958 = True
     exp = model.render().astype(np.int32)
+    if regs[25] & 0x08:
+        # R#25 YJK adds 4 to the horizontal adjust: openMSX shows the whole
+        # picture 4 pixels to the right (the model and the RTL frames are
+        # relative to the raster, like R#18).
+        border = model.pal5(model.border()) if model.yjk else model.border()
+        exp = np.concatenate([np.full((exp.shape[0], 8), border, dtype=np.int32), exp[:, :-8]], axis=1)
     got = shots58[name].active
     diff = got != exp
     if diff.any():

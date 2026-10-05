@@ -217,3 +217,20 @@ V9958_SCENES = {
     "h_t1_msk": lambda: v9958(scene("T1", 48), r25=0x02, r27=4),
     "h_g3_sprites": lambda: v9958(scene("G3", 49), r26=1, r27=6),
 }
+
+
+# -- V9958 YJK scenes ---------------------------------------------------------
+
+def yjk(mode, seed, r25=0x08, **kw):
+    sc = scene(mode, seed, **kw)
+    return v9958(sc, r25=r25)
+
+
+V9958_SCENES.update({
+    "y_g7_yjk": lambda: yjk("G7", 60, lines212=True),                 # SCREEN 12
+    "y_g7_yae": lambda: yjk("G7", 61, r25=0x18),                      # SCREEN 10 / 11
+    "y_g7_yae_tp": lambda: yjk("G7", 62, r25=0x18, tp=True),
+    "y_g6_yjk": lambda: yjk("G6", 63),                                # YJK in G6
+    "y_g4_yjk": lambda: yjk("G4", 64),                                # G4 + YJK: color 15
+    "y_g7_yjk_scroll": lambda: v9958(scene("G7", 65), r25=0x08, r26=3, r27=2),
+})

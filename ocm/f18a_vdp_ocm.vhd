@@ -78,10 +78,9 @@ entity vdp is
       -- '1' = V9938 (MSX2): R#0-R#46, ports 9Ah / 9Bh, 128 KB VRAM in
       -- internal RAM (128 M9K).  '0' = TMS9918A + F18A, 16 KB.
       V9938             : std_logic := '1';
-      -- '1' = V9958 (MSX2+, with V9938 = '1').  Off until horizontal
-      -- scroll and YJK are done (f18a-5pv.2), so an MSX2+ BIOS does not
-      -- use them.
-      V9958             : std_logic := '0'
+      -- '1' = V9958 (MSX2+, with V9938 = '1'): YJK, horizontal scroll,
+      -- commands in every mode, S#1 ID 2.
+      V9958             : std_logic := '1'
    );
    port (
       -- VDP clock ... 21.477MHz

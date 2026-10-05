@@ -23,6 +23,30 @@ def model_frame(model, standard="ntsc"):
     top, bottom, _ = GEOM15[standard]
     if model.lines == 212:
         top, bottom = top - 10, bottom - 10
+    if model.yjk:
+        # 15-bit RGB codes (YJK_RGB | r << 10 | g << 5 | b): the 4 high bits
+        # of the 8-bit output (c << 3 | c >> 2) are c >> 1.
+        img = model.render()
+        frame = np.empty((top + model.lines + bottom, W15, 3), dtype=np.uint8)
+        b = model.pal5(model.border())
+        frame[:, :] = [((b >> 10) & 31) >> 1, ((b >> 5) & 31) >> 1, (b & 31) >> 1]
+        x0 = ACTIVE_X - X15_FIRST
+        frame[top: top + model.lines, x0: x0 + 512, 0] = ((img >> 10) & 31) >> 1
+        frame[top: top + model.lines, x0: x0 + 512, 1] = ((img >> 5) & 31) >> 1
+        frame[top: top + model.lines, x0: x0 + 512, 2] = (img & 31) >> 1
+        return frame
+    if model.yjk:
+        # 15-bit RGB codes (YJK_RGB | r << 10 | g << 5 | b): the 4 high bits
+        # of the 8-bit output (c << 3 | c >> 2) are c >> 1.
+        img = model.render()
+        frame = np.empty((top + model.lines + bottom, W15, 3), dtype=np.uint8)
+        b = model.pal5(model.border())
+        frame[:, :] = [((b >> 10) & 31) >> 1, ((b >> 5) & 31) >> 1, (b & 31) >> 1]
+        x0 = ACTIVE_X - X15_FIRST
+        frame[top: top + model.lines, x0: x0 + 512, 0] = ((img >> 10) & 31) >> 1
+        frame[top: top + model.lines, x0: x0 + 512, 1] = ((img >> 5) & 31) >> 1
+        frame[top: top + model.lines, x0: x0 + 512, 2] = (img & 31) >> 1
+        return frame
     if model.mode == vm.G7:
         # GGGRRRBB, the 2-bit blue as the levels 0, 2, 4, 7.
         rgb = np.array([[expand((c >> 2) & 7), expand(c >> 5), expand((0, 2, 4, 7)[c & 3])]
@@ -324,3 +348,37 @@ async def blank_no_sprite_status(dut):
     await FallingEdge(dut.vsync_n_o)
     s0 = await f.read_status()
     assert s0 & 0x20, f"S#0 {s0:02x} with BL = 1"
+
+
+@cocotb.test()
+async def yjk_8bit(dut):
+    """V9958 YJK at 8 bits per channel: one line of y_g7_yjk sampled on
+    red8_o / grn8_o / blu8_o against the model's 5-bit RGB (c << 3 | c >> 2)."""
+    vram, regs, pal = v9938_scenes.V9958_SCENES["y_g7_yjk"]()
+    f = F18A(dut)
+    await load(f, vram, regs, pal, vram_size=len(vram), v9958=True)
+    model = vm.V9938(vram, regs, pal)
+    model.v9958 = True
+    img = model.render()
+    top = GEOM15["ntsc"][0] - 10                    # 212 lines
+    line = 40
+    await FallingEdge(dut.vsync_n_o)
+    n = 0
+    while True:                                      # picture lines start when blank falls
+        await FallingEdge(dut.blank_o)
+        if n == top + line:
+            break
+        n += 1
+    clk = dut.clk_pix_o
+    for _ in range(ACTIVE_X - X15_FIRST):
+        await RisingEdge(clk)
+    errors = []
+    for x in range(256):
+        await RisingEdge(clk)
+        got = (int(dut.red8_o.value), int(dut.grn8_o.value), int(dut.blu8_o.value))
+        await RisingEdge(clk)
+        c = int(img[line, 2 * x])
+        exp = tuple((v << 3) | (v >> 2) for v in ((c >> 10) & 31, (c >> 5) & 31, c & 31))
+        if got != exp:
+            errors.append(f"x {x}: RTL {got} model {exp}")
+    assert not errors, f"{len(errors)} pixels differ: " + ", ".join(errors[:8])

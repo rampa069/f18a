@@ -42,6 +42,9 @@ TEXT_MODES = (T1, T2)
 TEXT_OFFSET_V9938 = 9
 TEXT_OFFSET_TMS = 6
 
+# V9958 YJK frames hold 15-bit RGB codes with this flag (render()).
+YJK_RGB = 0x8000
+
 # MSX2 BIOS default palette, (R, G, B) 3 bits each.
 DEFAULT_PALETTE = [
     (0, 0, 0), (0, 0, 0), (1, 6, 1), (3, 7, 3), (1, 1, 7), (2, 3, 7), (5, 1, 1), (2, 6, 7),
@@ -281,10 +284,15 @@ class V9938:
 
     # -- Display ------------------------------------------------------------
 
+    @property
+    def yjk(self):
+        """V9958 R#25 YJK in a bitmap mode (YJK only works in G6 / G7)."""
+        return self.v9958 and self.regs[25] & 0x08 and self.mode in BITMAP_MODES
+
     def border(self):
         """Border color code (G7: the whole R#7; G5: the even half pixel,
         R#7 bits 3-2, see border_line)."""
-        if self.mode == G7:
+        if self.mode == G7 and not self.yjk:
             return self.regs[7]
         if self.mode == G5:
             return (self.regs[7] >> 2) & 3
@@ -362,22 +370,63 @@ class V9938:
             return self._text_scroll(out)
 
         line_fn = self._bitmap_line if mode in BITMAP_MODES else self._char_line
+        if self.yjk:
+            line_fn = self._yjk_line
         pix = line_fn(y)
         if self.v9958 and (self.regs[26] & 0x1F or self.regs[25] & 0x01):
             pix = self._hscroll(pix, line_fn, y)
 
-        if mode in (G5, G6):
+        if mode in (G5, G6) and not self.yjk:
             pix512 = pix
         else:
             pix512 = np.repeat(pix, 2)
         pix512 = self._shift_low(pix512, out)
-        if tp and mode != G7:
+        if tp and (mode != G7 or self.yjk):
             # Background color 0 shows the border (G7 has no transparency).
             pix512 = np.where(pix512 == 0, out, pix512)
 
         # Sprites over the background: a sprite pixel is never transparent
         # once drawn (in G5 each half takes 2 bits of the sprite color).
-        return self._left_border(self._draw_sprites(pix512.astype(np.uint16), line_sprites), out)
+        line_out = self._left_border(self._draw_sprites(pix512.astype(np.uint16), line_sprites), out)
+        if self.yjk:
+            # Everything as 15-bit RGB (YJK_RGB | r << 10 | g << 5 | b).
+            line_out = np.array([c if c & YJK_RGB else self.pal5(c) for c in line_out], dtype=np.uint16)
+        return line_out
+
+    def pal5(self, idx):
+        """A palette color as a YJK frame code: the 3-bit levels at 5 bits."""
+        r, g, b = self.palette[idx]
+        m = lambda c: (c << 2) | (c >> 1)
+        return YJK_RGB | (m(r) << 10) | (m(g) << 5) | m(b)
+
+    def _yjk_line(self, y, even=False):
+        """V9958 YJK (openMSX BitmapConverter::renderYJK / renderYAE): groups
+        of 4 pixels share J and K, each has its own Y; with YAE a pixel with
+        bit 3 set is the palette color (byte >> 4).  G4 / G5 with YJK show
+        palette color 15."""
+        if self.mode in (G4, G5):
+            return np.full(256, 15, dtype=np.uint16)
+        base = self.name_base()
+        if even:
+            base &= ~(0x100 << 7)
+        vline = (base >> 7) & (0x100 | y)
+        data = [self.vram[self.phys(planar(vline * 256 + i))] for i in range(256)]
+        yae = self.regs[25] & 0x10
+        out = np.zeros(256, dtype=np.uint16)
+        for g in range(0, 256, 4):
+            p = data[g: g + 4]
+            j = (p[2] & 7) + ((p[3] & 3) << 3) - ((p[3] & 4) << 3)
+            k = (p[0] & 7) + ((p[1] & 3) << 3) - ((p[1] & 4) << 3)
+            for n in range(4):
+                if yae and p[n] & 0x08:
+                    out[g + n] = p[n] >> 4
+                else:
+                    yy = p[n] >> 3
+                    r = min(max(yy + j, 0), 31)
+                    gg = min(max(yy + k, 0), 31)
+                    b = min(max((5 * yy - 2 * j - k + 2) // 4, 0), 31)
+                    out[g + n] = YJK_RGB | (r << 10) | (gg << 5) | b
+        return out
 
     def _text_scroll(self, out):
         """V9958 in the text modes: only R#27 moves the text (no R#26); with
@@ -565,7 +614,7 @@ class V9938:
         def put(x, color):
             if not 0 <= x < 256:
                 return
-            if mode == G7:
+            if mode == G7 and not self.yjk:
                 color = G7_SPRITE_COLORS[color]
             if mode == G5:
                 out[2 * x] = color >> 2

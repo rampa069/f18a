@@ -78,7 +78,12 @@ entity f18a_bitmap is
       we          : out std_logic;
       x           : out unsigned(0 to 8);
       din         : out std_logic_vector(0 to 7);
-      done        : out std_logic                     -- one clock when the line is complete
+      done        : out std_logic;                    -- one clock when the line is complete
+   -- V9958 YJK (G7 byte order): J and K of each group of 4 pixels (openMSX
+   -- renderYJK), K = p1(2-0) p0(2-0), J = p3(2-0) p2(2-0), 6-bit signed.
+      jk_we       : out std_logic;
+      jk_x        : out unsigned(0 to 5);             -- group (pixel / 4)
+      jk          : out std_logic_vector(0 to 11)     -- J & K
    );
 end f18a_bitmap;
 
@@ -100,6 +105,10 @@ architecture rtl of f18a_bitmap is
    signal we_r       : std_logic := '0';
    signal din_r      : std_logic_vector(0 to 7) := (others => '0');
    signal done_r     : std_logic := '0';
+   signal hist_r     : std_logic_vector(0 to 8) := (others => '0');   -- low 3 bits of the last 3 bytes
+   signal jk_we_r    : std_logic := '0';
+   signal jk_x_r     : unsigned(0 to 5) := (others => '0');
+   signal jk_r       : std_logic_vector(0 to 11) := (others => '0');
 
    signal planar_s   : std_logic;
    signal last_byte_s: unsigned(0 to 7);
@@ -210,6 +219,16 @@ begin
    -- The pixel written is from data_r, which holds the byte from the
    -- second S_PIX clock on; the first pixel uses vdin directly.
    process (clk) begin if rising_edge(clk) then
+      jk_we_r <= '0';
+      if state_r = S_PIX and pix_r = 0 and mode = "11" then
+         -- YJK: J and K at the 4th byte of each group (p0 p1 p2 in hist_r).
+         hist_r <= hist_r(3 to 8) & vdin(5 to 7);
+         if byte_r(6 to 7) = "11" then
+            jk_we_r <= '1';
+            jk_x_r <= byte_r(0 to 5);
+            jk_r <= vdin(5 to 7) & hist_r(6 to 8) & hist_r(3 to 5) & hist_r(0 to 2);
+         end if;
+      end if;
       if state_r = S_PIX then
          if pix_r = 0 then
             if mode = "01" then
@@ -230,5 +249,8 @@ begin
    x      <= x_r;
    din    <= din_r;
    done   <= done_r;
+   jk_we  <= jk_we_r;
+   jk_x   <= jk_x_r;
+   jk     <= jk_r;
 
 end rtl;

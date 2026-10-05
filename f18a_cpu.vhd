@@ -84,8 +84,11 @@ entity f18a_cpu is
       v58_r25     : out std_logic_vector(0 to 7);     -- V9958 R#25-R#27, 0 unless V9958
       v58_r26     : out std_logic_vector(0 to 7);
       v58_r27     : out std_logic_vector(0 to 7);
+      v58_yjk     : out std_logic;                    -- V9958 YJK in G6 / G7
+      v58_yae     : out std_logic;                    -- R#25 YAE
+      v58_bogus   : out std_logic;                    -- YJK in G4 / G5: palette color 15
       v38_vscroll : out unsigned(0 to 7);             -- V9938 R23 vertical scroll
-      v38_hadj    : out signed(0 to 3);               -- V9938 R18 set adjust, horizontal
+      v38_hadj    : out signed(0 to 4);               -- V9938 R18 set adjust, horizontal (V9958 YJK: -4)
       v38_vadj    : out signed(0 to 3);               --                       vertical
       v38_sp2     : out std_logic;                    -- V9938 sprite mode 2 (G3-G7)
       v38_r5      : out std_logic_vector(0 to 7);     -- V9938 sprite tables
@@ -324,6 +327,7 @@ architecture rtl of f18a_cpu is
    signal v38_bmp_s     : std_logic;
    signal cmd_nb_s      : std_logic;                   -- V9958: commands in a non-bitmap mode
    signal cmd_ok_s      : std_logic;                   -- commands possible in this mode
+   signal v58_yjk_s     : std_logic;                   -- V9958 R#25 YJK bit
    signal v38_bmode_s   : std_logic_vector(0 to 1);
 
    -- Status register output, depends on status register pointer R15
@@ -1440,13 +1444,17 @@ begin
    v58_r26      <= v38_reg(26) when v9958 = '1' else (others => '0');
    v58_r27      <= v38_reg(27) when v9958 = '1' else (others => '0');
    v38_vscroll  <= unsigned(v38_reg(23)) when v9938 = '1' else (others => '0');
-   v38_hadj     <= signed(v38_reg(18)(4 to 7)) when v9938 = '1' else (others => '0');
+   -- V9958 R#25 YJK adds 4 to the horizontal adjust (openMSX execHorAdjust):
+   -- the picture moves 4 pixels right.
+   v38_hadj     <= resize(signed(v38_reg(18)(4 to 7)), 5) - 4 when v9958 = '1' and v38_reg(25)(4) = '1' else
+                   resize(signed(v38_reg(18)(4 to 7)), 5) when v9938 = '1' else (others => '0');
    v38_vadj     <= signed(v38_reg(18)(0 to 3)) when v9938 = '1' else (others => '0');
 
    -- Bitmap modes: G4 01100, G5 10000, G6 10100, G7 11100 (M5 M4 M3 M2 M1).
    v38_bmp_s    <= v9938 and (v38_m(0) or (v38_m(1) and v38_m(2)));
    v38_bmode_s  <= "00" when v38_m(0) = '0' else         -- G4
                    "01" when v38_m(2) = '0' else         -- G5
+                   "11" when v38_m(1) = '0' and v58_yjk_s = '1' else   -- G6 + YJK: like G7
                    "10" when v38_m(1) = '0' else         -- G6
                    "11";                                 -- G7
    v38_bmp      <= v38_bmp_s;
@@ -1454,6 +1462,12 @@ begin
    cmd_nb_s     <= v9958 and v38_reg(25)(1) and not v38_bmp_s;
    cmd_ok_s     <= v38_bmp_s or cmd_nb_s;
    v38_bmode    <= v38_bmode_s;
+   -- V9958 YJK (R#25 bit 3, YAE bit 4): G6 shows like G7 (256 bytes per
+   -- line); G4 / G5 with YJK show palette color 15 (openMSX renderBogus).
+   v58_yjk_s    <= v9958 and v38_reg(25)(4);
+   v58_yjk      <= v58_yjk_s and v38_m(0) and v38_m(2);               -- G6, G7 (M5, M3)
+   v58_yae      <= v38_reg(25)(3);
+   v58_bogus    <= v58_yjk_s and v38_bmp_s and not (v38_m(0) and v38_m(2));   -- G4, G5
    v38_r2       <= v38_reg(2);
    v38_r4       <= v38_reg(4);
    v38_r10      <= v38_reg(10);
@@ -1615,6 +1629,7 @@ begin
    -- counters ("0100" / "1010"); the tile FSM is idle in them.
    gmode       <= "0100" when v9938 = '1' and v38_m = "01000" else
                   "0100" when v9938 = '1' and (v38_m = "01100" or v38_m = "11100") else
+                  "0100" when v9938 = '1' and v38_m = "10100" and v58_yjk_s = '1' else   -- G6 + YJK
                   "1010" when v9938 = '1' and (v38_m = "10000" or v38_m = "10100") else
                   reg0m4 & reg0m3 & reg1m2 & reg1m1;
    soft_blank  <= reg1b;

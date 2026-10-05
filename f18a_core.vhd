@@ -165,7 +165,7 @@ architecture rtl of f18a_core is
    signal page_odd_s       : std_logic;                  -- '0': show the even bitmap page
    signal bmp_r2_s         : std_logic_vector(0 to 7);
    signal v38_vscroll_s    : unsigned(0 to 7);
-   signal v38_hadj_s       : signed(0 to 3);
+   signal v38_hadj_s       : signed(0 to 4);
    signal v38_vadj_s       : signed(0 to 3);
    signal v38_sp2_s        : std_logic;                  -- V9938 sprites
    signal v38_r5_s, v38_r6_s, v38_r11_s : std_logic_vector(0 to 7);
@@ -223,6 +223,8 @@ architecture rtl of f18a_core is
 
    -- Tile and sprite output
    signal tile_color_s     : std_logic_vector(0 to 7);
+   signal tile_jk_s        : std_logic_vector(0 to 11);  -- V9958 YJK
+   signal v58_yjk_s, v58_yae_s, v58_bogus_s : std_logic;
    signal sprt_color_s     : std_logic_vector(0 to 7);
    signal bg_color_s       : std_logic_vector(0 to 5);
 
@@ -386,6 +388,9 @@ begin
       v58_r25        => v58_r25_s,
       v58_r26        => v58_r26_s,
       v58_r27        => v58_r27_s,
+      v58_yjk        => v58_yjk_s,
+      v58_yae        => v58_yae_s,
+      v58_bogus      => v58_bogus_s,
       v38_vscroll    => v38_vscroll_s,
       v38_hadj       => v38_hadj_s,
       v38_vadj       => v38_vadj_s,
@@ -607,7 +612,8 @@ begin
       vaddr          => tile_addr_s,
    -- Outputs
       sprite_start   => sprite_start_s,
-      tile_color     => tile_color_s
+      tile_color     => tile_color_s,
+      tile_jk        => tile_jk_s
    );
 
 
@@ -665,6 +671,11 @@ begin
       din            => col_din_s,
       dout1          => col_dout_s,       -- to the GPU! :-)
       tile_color     => tile_color_s,
+      yjk            => v58_yjk_s,
+      yae            => v58_yae_s,
+      bogus          => v58_bogus_s,
+      tp             => v38_tp_s,
+      jk             => tile_jk_s,
       sprt_color     => sprt_color_s,
       bg_color       => bg_color_s,
       show_bg        => show_bg,
@@ -745,8 +756,8 @@ begin
    -- even field, or while the R#13 blink state is on.
    page_odd_s <= not ((v38_r9_s(5) and not field_s) or v38_blink_raw_s);
    bmp_r2_s <= v38_r2_s(0 to 1) & (v38_r2_s(2) and page_odd_s) & v38_r2_s(3 to 7);
-   v38_g5_s <= '1' when v38_bmp_s = '1' and v38_bmode_s = "01" else '0';
-   v38_g7_s <= '1' when v38_bmp_s = '1' and v38_bmode_s = "11" else '0';
+   v38_g5_s <= '1' when v38_bmp_s = '1' and v38_bmode_s = "01" and v58_bogus_s = '0' else '0';
+   v38_g7_s <= '1' when v38_bmp_s = '1' and v38_bmode_s = "11" and v58_yjk_s = '0' else '0';
 
    -- G6 / G7: the sprite tables are in the planar (rotated) VRAM too.
    sprt_vaddr_s <= sprt_addr_s(16) & sprt_addr_s(0 to 15) when v38_bmp_s = '1' and v38_bmode_s(0) = '1' else

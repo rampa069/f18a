@@ -126,7 +126,8 @@ entity f18a_tiles is
       tile_active    : out std_logic;
    -- Outputs
       sprite_start   : out std_logic;
-      tile_color     : out std_logic_vector(0 to 7)
+      tile_color     : out std_logic_vector(0 to 7);
+      tile_jk        : out std_logic_vector(0 to 11)   -- V9958 YJK: J & K of the pixel's group
    );
 end f18a_tiles;
 
@@ -306,6 +307,11 @@ architecture rtl of f18a_tiles is
    signal bmp_active_s  : std_logic;
    signal bmp_vaddr_s   : std_logic_vector(0 to 16);
    signal bmp_we_s      : std_logic;
+   signal jk_we_s, jk_we1, jk_we2 : std_logic;
+   signal jk_x_s        : unsigned(0 to 5);
+   signal jk_din_s      : std_logic_vector(0 to 11);
+   signal jk_addr1, jk_addr2 : std_logic_vector(0 to 5);
+   signal jk_dout1, jk_dout2 : std_logic_vector(0 to 11);
    signal bmp_x_s       : unsigned(0 to 8);
    signal bmp_din_s     : std_logic_vector(0 to 7);
    signal bmp_done_s    : std_logic;
@@ -1497,8 +1503,37 @@ begin
       we          => bmp_we_s,
       x           => bmp_x_s,
       din         => bmp_din_s,
-      done        => bmp_done_s
+      done        => bmp_done_s,
+      jk_we       => jk_we_s,
+      jk_x        => jk_x_s,
+      jk          => jk_din_s
    );
+
+   -- V9958 YJK: J and K per group of 4 pixels, double buffered like the
+   -- line buffer and read with the same x (group = x / 4).
+   jk_we1   <= (not y_next_r(8)) and jk_we_s;
+   jk_we2   <= y_next_r(8) and jk_we_s;
+   jk_addr1 <= std_logic_vector(jk_x_s) when y_next_r(8) = '0' else std_logic_vector(x_pixel_pos(1 to 6));
+   jk_addr2 <= std_logic_vector(jk_x_s) when y_next_r(8) = '1' else std_logic_vector(x_pixel_pos(1 to 6));
+
+   inst_jkbuf : entity work.f18a_tile_linebuf
+   generic map (
+      ADDR_WIDTH => 6,
+      DATA_WIDTH => 12
+   )
+   port map (
+      clk      => clk,
+      we1      => jk_we1,
+      addr1    => jk_addr1,
+      din1     => jk_din_s,
+      dout1    => jk_dout1,
+      we2      => jk_we2,
+      addr2    => jk_addr2,
+      din2     => jk_din_s,
+      dout2    => jk_dout2
+   );
+
+   tile_jk <= jk_dout1 when y_next_r(8) = '1' else jk_dout2;
 
    vaddr        <= bmp_vaddr_s when bmp_active_s = '1' else vhi_s & vaddr14;
    tile_active  <= tile_act_s or bmp_active_s;

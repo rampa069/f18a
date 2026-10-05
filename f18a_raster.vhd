@@ -51,7 +51,7 @@ entity f18a_raster is
       vga_clk     : in  std_logic;       -- pixel clock, 10.74MHz
       rst_n       : in  std_logic;
       pal         : in  std_logic;       -- '1' = PAL, '0' = NTSC, read at the end of a frame
-      hadj        : in  signed(0 to 3);  -- V9938 R18 set adjust: +n moves the picture n pixels left
+      hadj        : in  signed(0 to 4);  -- V9938 R18 set adjust: +n moves the picture n pixels left
       vadj        : in  signed(0 to 3);  --                       +n moves the picture n lines up
       interlace   : in  std_logic := '0'; -- V9938 R9 IL: the odd fields are half a line lower
       field       : out std_logic;       -- V9938 S#2 EO: toggles every frame, '1' = odd field
