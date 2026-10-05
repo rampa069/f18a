@@ -182,9 +182,9 @@ architecture rtl of vdp is
    signal int_sync_r    : std_logic_vector(1 downto 0) := "11";
 
    -- 15KHz video from the F18A, registered in the CLK21M domain.
-   signal red15_s, grn15_s, blu15_s : std_logic_vector(0 to 3);
+   signal red15_s, grn15_s, blu15_s : std_logic_vector(0 to 7);   -- 8 bits, 6 are used
    signal hs15_n_s, vs15_n_s, cs15_n_s, blank15_s : std_logic;
-   signal rgb15_r       : std_logic_vector(11 downto 0) := (others => '0');
+   signal rgb15_r       : std_logic_vector(17 downto 0) := (others => '0');
    signal hs15_n_r      : std_logic := '1';
    signal vs15_n_r      : std_logic := '1';
    signal cs15_n_r      : std_logic := '1';
@@ -194,20 +194,20 @@ architecture rtl of vdp is
    -- CLK21M cycles; it is written at half rate and read twice at full rate.
    constant HALF_PX     : integer := 684;
    constant HS31_CLKS   : integer := 52;             -- half of the 15KHz hsync
-   type line_t is array (0 to 2 * 1024 - 1) of std_logic_vector(12 downto 0);
+   type line_t is array (0 to 2 * 1024 - 1) of std_logic_vector(18 downto 0);
    signal linebuf       : line_t := (others => (others => '0'));
    signal in_x_r        : unsigned(10 downto 0) := (others => '0');
    signal in_bank_r     : std_logic := '0';
    signal out_x_r       : unsigned(9 downto 0) := (others => '0');
    signal hs15_d_r      : std_logic := '1';
    signal vs31_r        : std_logic := '1';
-   signal rd31_r        : std_logic_vector(12 downto 0) := (others => '0');
+   signal rd31_r        : std_logic_vector(18 downto 0) := (others => '0');
    signal hs31_n_r      : std_logic := '1';
    signal hs31_n_d_r    : std_logic := '1';
    signal vs31_d_r      : std_logic := '1';
 
    -- Video outputs.
-   signal vid_rgb_r     : std_logic_vector(11 downto 0) := (others => '0');
+   signal vid_rgb_r     : std_logic_vector(17 downto 0) := (others => '0');
    signal vid_hs_n_r    : std_logic := '1';
    signal vid_vs_n_r    : std_logic := '1';
    signal vid_cs_n_r    : std_logic := '1';
@@ -216,11 +216,6 @@ architecture rtl of vdp is
    function vram_abits(v : std_logic) return integer is
    begin
       if v = '1' then return 17; else return 14; end if;
-   end function;
-
-   function to6(c : std_logic_vector(3 downto 0)) return std_logic_vector is
-   begin
-      return c & c(3 downto 2);
    end function;
 
 begin
@@ -265,9 +260,12 @@ begin
       cd_i           => cd_r,
       cd_o           => cd_o_s,
       pal_i          => pal_s,
-      red_o          => red15_s,
-      grn_o          => grn15_s,
-      blu_o          => blu15_s,
+      red_o          => open,
+      grn_o          => open,
+      blu_o          => open,
+      red8_o         => red15_s,
+      grn8_o         => grn15_s,
+      blu8_o         => blu15_s,
       hsync_n_o      => hs15_n_s,
       vsync_n_o      => vs15_n_s,
       csync_n_o      => cs15_n_s,
@@ -406,7 +404,7 @@ begin
    -- CLK21M cycles (1368 per line).
    process (clk21m) begin
       if rising_edge(clk21m) then
-         rgb15_r   <= red15_s & grn15_s & blu15_s;
+         rgb15_r   <= red15_s(0 to 5) & grn15_s(0 to 5) & blu15_s(0 to 5);
          hs15_n_r  <= hs15_n_s;
          vs15_n_r  <= vs15_n_s;
          cs15_n_r  <= cs15_n_s;
@@ -461,12 +459,12 @@ begin
             vid_vs_n_r  <= vs15_n_r;
             vid_cs_n_r  <= cs15_n_r;
          else
-            if rd31_r(12) = '1' then
+            if rd31_r(18) = '1' then
                vid_rgb_r <= (others => '0');
             else
-               vid_rgb_r <= rd31_r(11 downto 0);
+               vid_rgb_r <= rd31_r(17 downto 0);
             end if;
-            vid_blank_r <= rd31_r(12);
+            vid_blank_r <= rd31_r(18);
             vid_hs_n_r  <= hs31_n_d_r;
             vid_vs_n_r  <= vs31_d_r;
             vid_cs_n_r  <= not ((not hs31_n_d_r) xor (not vs31_d_r));
@@ -474,9 +472,9 @@ begin
       end if;
    end process;
 
-   pvideor    <= to6(vid_rgb_r(11 downto 8));
-   pvideog    <= to6(vid_rgb_r( 7 downto 4));
-   pvideob    <= to6(vid_rgb_r( 3 downto 0));
+   pvideor    <= vid_rgb_r(17 downto 12);
+   pvideog    <= vid_rgb_r(11 downto  6);
+   pvideob    <= vid_rgb_r( 5 downto  0);
    pvideohs_n <= vid_hs_n_r;
    pvideovs_n <= vid_vs_n_r;
    pvideocs_n <= vid_cs_n_r;

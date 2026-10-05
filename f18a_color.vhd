@@ -69,10 +69,11 @@ entity f18a_color is
       g5          : in  std_logic;                    -- V9938 G5: sprite colors split in two halves
       g7          : in  std_logic;                    -- V9938 G7: tile entries and the border are GGGRRRBB
       g7_bg       : in  std_logic_vector(0 to 7);     -- G7 border (R#7)
+      v9938       : in  std_logic := '0';             -- palette entries hold 3-bit V9938 levels
       half        : in  std_logic;                    -- G5 half pixel: '0' left (bits 3-2), '1' right (1-0)
-      tile_r      : out std_logic_vector(0 to 3);
-      tile_g      : out std_logic_vector(0 to 3);
-      tile_b      : out std_logic_vector(0 to 3)
+      tile_r      : out std_logic_vector(0 to 7);     -- 8 bits per channel
+      tile_g      : out std_logic_vector(0 to 7);
+      tile_b      : out std_logic_vector(0 to 7)
    );
 end f18a_color;
 
@@ -175,10 +176,21 @@ architecture rtl of f18a_color is
    signal g7_code       : std_logic_vector(0 to 7);
    signal g7_r          : std_logic := '0';
 
-   -- 3-bit V9938 level to the 4-bit output, like the palette (x << 1 | x >> 2).
-   function lvl4(c : std_logic_vector(0 to 2)) return std_logic_vector is
+   -- 3-bit V9938 level to 8 bits (c * 255 / 7: c << 5 | c << 2 | c >> 1).
+   -- Its high nibble is the 4-bit palette value (c << 1 | c >> 2).
+   function lvl8(c : std_logic_vector(0 to 2)) return std_logic_vector is
    begin
-      return c & c(0);
+      return c & c & c(0 to 1);
+   end function;
+
+   -- A 4-bit palette channel to 8 bits: the 3-bit level in V9938 mode, the
+   -- nibble repeated otherwise (the F18A / 9918A palettes).
+   function pal8(v : std_logic_vector(0 to 3); v9938 : std_logic) return std_logic_vector is
+   begin
+      if v9938 = '1' then
+         return lvl8(v(0 to 2));
+      end if;
+      return v & v;
    end function;
 
 begin
@@ -242,12 +254,12 @@ begin
 
 
    -- G7 blue: 2 bits to the levels 0, 2, 4, 7.
-   tile_r <= lvl4(g7_code(3 to 5)) when g7_r = '1' else dout2(0 to 3);
-   tile_g <= lvl4(g7_code(0 to 2)) when g7_r = '1' else dout2(4 to 7);
-   tile_b <= dout2(8 to 11) when g7_r = '0' else
-             x"0" when g7_code(6) = '0' and g7_code(7) = '0' else
-             x"4" when g7_code(6) = '0' else
-             x"9" when g7_code(7) = '0' else
-             x"F";
+   tile_r <= lvl8(g7_code(3 to 5)) when g7_r = '1' else pal8(dout2(0 to 3), v9938);
+   tile_g <= lvl8(g7_code(0 to 2)) when g7_r = '1' else pal8(dout2(4 to 7), v9938);
+   tile_b <= pal8(dout2(8 to 11), v9938) when g7_r = '0' else
+             lvl8("000") when g7_code(6) = '0' and g7_code(7) = '0' else
+             lvl8("010") when g7_code(6) = '0' else
+             lvl8("100") when g7_code(7) = '0' else
+             lvl8("111");
 
 end rtl;

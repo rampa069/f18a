@@ -89,6 +89,9 @@ entity f18a_core is
       red_o                : out std_logic_vector(0 to 3);
       grn_o                : out std_logic_vector(0 to 3);
       blu_o                : out std_logic_vector(0 to 3);
+      red8_o               : out std_logic_vector(0 to 7);  -- the same at 8 bits per channel
+      grn8_o               : out std_logic_vector(0 to 7);
+      blu8_o               : out std_logic_vector(0 to 7);
       hsync_n_o            : out std_logic;
       vsync_n_o            : out std_logic;
       csync_n_o            : out std_logic;  -- composite sync for RGB / SCART
@@ -123,9 +126,9 @@ architecture rtl of f18a_core is
    signal hsync_r          : std_logic := '1';
    signal vsync_r          : std_logic := '1';
    signal csync_r          : std_logic := '1';
-   signal red_r, red_s     : std_logic_vector(0 to 3) := "0000";
-   signal grn_r, grn_s     : std_logic_vector(0 to 3) := "0000";
-   signal blu_r, blu_s     : std_logic_vector(0 to 3) := "0000";
+   signal red_r, red_s     : std_logic_vector(0 to 7) := x"00";
+   signal grn_r, grn_s     : std_logic_vector(0 to 7) := x"00";
+   signal blu_r, blu_s     : std_logic_vector(0 to 7) := x"00";
 
    -- Video signals
    -- blank here is NOT the same as the soft_blank signal from the CPU I/O
@@ -222,9 +225,9 @@ architecture rtl of f18a_core is
    signal col_dout_s       : std_logic_vector(0 to 11);
 
    -- Color output
-   signal tile_r_s         : std_logic_vector(0 to 3);
-   signal tile_g_s         : std_logic_vector(0 to 3);
-   signal tile_b_s         : std_logic_vector(0 to 3);
+   signal tile_r_s         : std_logic_vector(0 to 7);
+   signal tile_g_s         : std_logic_vector(0 to 7);
+   signal tile_b_s         : std_logic_vector(0 to 7);
 
    signal show_bg          : std_logic;
 
@@ -646,6 +649,7 @@ begin
       g5             => v38_g5_s,
       g7             => v38_g7_s,
       g7_bg          => v38_r7_s,
+      v9938          => v9938_i,
       half           => half_r,
       tile_r         => tile_r_s,
       tile_g         => tile_g_s,
@@ -723,9 +727,9 @@ begin
 
    -- The simulated scan lines of the original double scan F18A (scanlines
    -- jumper and VR50 bit) have no effect at 15KHz.
-   red_s <= override_r_s when override_s = '1' else tile_r_s;
-   grn_s <= override_g_s when override_s = '1' else tile_g_s;
-   blu_s <= override_b_s when override_s = '1' else tile_b_s;
+   red_s <= override_r_s & override_r_s when override_s = '1' else tile_r_s;
+   grn_s <= override_g_s & override_g_s when override_s = '1' else tile_g_s;
+   blu_s <= override_b_s & override_b_s when override_s = '1' else tile_b_s;
 
 
    -- Register the video outputs.
@@ -743,8 +747,11 @@ begin
    hsync_n_o   <= hsync_r;
    vsync_n_o   <= vsync_r;
    csync_n_o   <= csync_r;
-   red_o       <= red_r;
-   grn_o       <= grn_r;
-   blu_o       <= blu_r;
+   red_o       <= red_r(0 to 3);
+   grn_o       <= grn_r(0 to 3);
+   blu_o       <= blu_r(0 to 3);
+   red8_o      <= red_r;
+   grn8_o      <= grn_r;
+   blu8_o      <= blu_r;
 
 end rtl;
