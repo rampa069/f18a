@@ -53,6 +53,7 @@ V9990_RTL_SOURCES = [
     "v9990/v9990_raster.vhd",
     "v9990/v9990_bitmap.vhd",
     "v9990/v9990_pattern.vhd",
+    "v9990/v9990_sprites.vhd",
     "v9990/v9990_core.vhd",
 ]
 V9990_TB_SOURCES = ["tb/v9990_tb.vhd"]
