@@ -73,7 +73,7 @@ def card():
             img[y, x] = WHITE
     # Title band (black) with the version.
     img[32:64, 48:208] = BLACK
-    text(img, 64, 40, f"F18A {VERSION}", WHITE, scale=2)
+    text(img, 64, 40, f"F18A-{VERSION}", WHITE, scale=2)
     # Color bars: the 15 colors, 16 x 32.
     for k, c in enumerate(range(1, 16)):
         x = 8 + 16 * k
@@ -196,7 +196,7 @@ def to_mc(img, pg=0x0000, nt=0x0800):
 
 
 TEXT_LINES = [
-    "F18A {v}",
+    "F18A-{v}",
     "",
     "TMS9918A  V9938",
     "",

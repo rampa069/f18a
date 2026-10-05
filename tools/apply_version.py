@@ -25,6 +25,7 @@ DIGITS = {
     "9": [".###.", "#...#", "#...#", ".####", "....#", "....#", "#...#", ".###."],
 }
 MAJOR_COL, MINOR_COL = 39, 48           # first column of the two digits
+DASH_COLS, DASH_ROW = (31, 35), 3        # the dash after "F18A" (row 3 = the bar of the 8)
 
 
 def crlf_rw(path, fn):
@@ -48,6 +49,12 @@ def banner(s):
         for r, line in enumerate(DIGITS[d]):
             for k, ch in enumerate(line):
                 bits[3 + r][col + k] = ch == "#"
+    # "F18A-": the "V" of the original "F18A V1.9" becomes a dash.
+    for r in range(8):
+        for k in range(DASH_COLS[0] - 2, MAJOR_COL - 1):
+            bits[3 + r][k] = False
+    for k in range(DASH_COLS[0], DASH_COLS[1] + 1):
+        bits[3 + DASH_ROW][k] = True
     out = []
     for row in bits:
         cells = ["'1'" if b else "'0'" for b in row]
