@@ -39,6 +39,10 @@ Logs, results and captured frames go to `sim/sim_build/`
 | `tests/test_testcard.py` | The power-on test card (`tools/testcard.py`) in every mode against the models; saves `docs/testcard/<chip>_<mode>.png` and `boot.png` |
 | `tb/ocm_tb.vhd`, `tb/f18a_vdp_pll_sim.vhd` | OCM-PLD VDP wrapper testbench (CLK21M, frames sampled on CLK21M) and PLL model |
 | `tests/test_ocm.py` | OCM-PLD wrapper: dot clocks, bus, MSX2 register writes, PAL/NTSC selection, 15/31 kHz line timing and image |
+| `tb/v9990_tb.vhd`, `v9990_driver.py` | V9990 (`../v9990/`) testbench: 42.95 MHz core clock, VRAM in block RAM, synchronous host bus (req / ack) |
+| `tests/test_v9990_io.py` | V9990 CPU interface (ports 60h-6Fh, registers, palette, VRAM pointers and mapping, system reset) against `v9990_model.py` |
+| `tests/test_v9990_timing.py` | V9990 line / frame timing (NTSC, PAL), display area and R#16, status VR / HR / EO, VI and HI interrupts, border color |
+| `tests/test_v9990_display.py` | V9990 bitmap modes against the model, one frame per scene compared clock by clock: B0-B4, B7, all color modes, scroll and roll, cursors, overscan, PAL, even / odd pages, display off, CPU writes during the display |
 
 Each render test is checked twice: against the reference model (is the
 output a correct 9918A image?) and against `golden/<scene>.png` (did the
@@ -75,6 +79,23 @@ double size screenshots are decoded back to VDP color codes; port sequences
 (`io_sequences.py`) are assembled into a Z80 program started from the
 H.TIMI hook, so reads and writes have their real side effects.
 `v9938_scenes.py` has the display scenes.
+
+## V9990 reference model and oracle
+
+`v9990_model.py` models the V9990 like openMSX (`src/video/v9990`): the
+CPU interface, the display timing and the bitmap modes with the cursors;
+`v9990_sequences.py` has the port sequences and `v9990_scenes.py` the
+display scenes.  The model is checked against openMSX with the GFX9000
+extension (`v9990_oracle.py`, same Docker image): the port sequences run
+by the Z80 and the `Sunrise GFX9000` regs, palette and VRAM debuggables
+dumped; the scenes loaded through the debugger and the raw double size
+screenshots (`set ::videosource GFX9000`) compared with the model through
+the openMSX DAC curve (calibrated with a 16 bpp ramp).  The screenshots are
+640 pixels wide, so B7 is compared as pairs of pixels:
+
+```bash
+F18A_OPENMSX=1 ../.venv/bin/python -m pytest -v test_v9990_model_openmsx.py   # ~2 min
+```
 
 ## Notes
 
