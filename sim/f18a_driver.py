@@ -194,5 +194,5 @@ def load_png(path):
 def mask_banner(frame):
     """Blank the power-on version banner so frames can be compared."""
     frame = frame.copy()
-    frame[:BANNER_H, :BANNER_W - X15_FIRST] = 0
+    frame[:BANNER_H, :BANNER_W + 2] = 0               # at the first visible pixel (+1 delay)
     return frame

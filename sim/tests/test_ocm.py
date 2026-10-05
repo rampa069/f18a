@@ -103,7 +103,7 @@ def to6(frame4):
 
 def mask_banner(frame, line_repeat=1):
     frame = frame.copy()
-    frame[:BANNER_H * line_repeat, :BANNER_W - X15_FIRST] = 0
+    frame[:BANNER_H * line_repeat, :BANNER_W + 2] = 0
     return frame
 
 

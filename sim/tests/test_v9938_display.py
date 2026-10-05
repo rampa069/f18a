@@ -42,7 +42,7 @@ def model_frame(model, standard="ntsc"):
 
 def mask_banner(frame):
     frame = frame.copy()
-    frame[:BANNER_H, :BANNER_W - X15_FIRST] = 0
+    frame[:BANNER_H, :BANNER_W + 2] = 0
     return frame
 
 

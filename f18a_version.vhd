@@ -46,6 +46,7 @@ library ieee;
 use ieee.std_logic_1164.all;
 use ieee.numeric_std.all;
 use ieee.std_logic_unsigned.all;
+use work.f18a_video_pkg.all;
 
 
 entity f18a_version is
@@ -111,6 +112,9 @@ architecture rtl of f18a_version is
    others => '0');
 
    signal addr_r, addr_x : std_logic_vector(0 to 9);
+   -- The banner starts at the first visible raster pixel (the 15 kHz
+   -- raster has its sync and blanking at x = 0).
+   signal bx_s : unsigned(0 to 9);
    signal pixel_s : std_logic;
    signal in_version_s : std_logic;
 
@@ -122,7 +126,8 @@ begin
    -- 8 4 2 1 | 32 16  8  4  2  1
    -- Y Y Y Y |  X  X  X  X  X  X
    -- 0 1 2 3    4  5  6  7  8  9 address
-   addr_x <= std_logic_vector(raster_y(6 to 9)) & std_logic_vector(raster_x(4 to 9));
+   bx_s <= raster_x - to_unsigned(H_VISIBLE_FIRST, 10);
+   addr_x <= std_logic_vector(raster_y(6 to 9)) & std_logic_vector(bx_s(4 to 9));
 
    -- Register at the VGA clock.  Matches the in_margin register
    -- in the counters module.
@@ -170,7 +175,8 @@ begin
       end if;
    end if; end process;
 
-   in_version_s <= '1' when ((raster_x < XMAX) and (raster_y < YMAX)) else '0';
+   in_version_s <= '1' when raster_x >= H_VISIBLE_FIRST and raster_x < H_VISIBLE_FIRST + XMAX and
+                            raster_y < YMAX else '0';
    override_o <= blank_i or (in_version_s and display_r);
 
 end rtl;
