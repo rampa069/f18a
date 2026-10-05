@@ -183,7 +183,7 @@ architecture rtl of f18a_color is
    signal g7_next       : std_logic_vector(0 to 7);
    signal yae_pal_s     : std_logic;                     -- YAE: this pixel is a palette color
    signal yjk_use_next, yjk_use_r : std_logic := '0';
-   signal yjk_rgb_next, yjk_rgb_r : std_logic_vector(0 to 14) := (others => '0');
+   signal yjk_rgb_next, yjk_rgb_c, yjk_rgb_r : std_logic_vector(0 to 14) := (others => '0');
 
    -- 5-bit V9958 level to 8 bits (c << 3 | c >> 2).
    function lvl8_5(c : std_logic_vector(0 to 4)) return std_logic_vector is
@@ -231,6 +231,10 @@ begin
 
          -- to the GPU! :-)
          dout1_reg <= colram(to_integer(unsigned(addr1)));
+
+         -- YJK: one register at the core clock (timing); the line buffer
+         -- data is stable for the 8 core clocks of a pixel.
+         yjk_rgb_c <= yjk_rgb_next;
       end if;
    end process;
 
@@ -296,7 +300,7 @@ begin
       g7_code <= g7_next;
       g7_r <= g7;
       yjk_use_r <= yjk_use_next;
-      yjk_rgb_r <= yjk_rgb_next;
+      yjk_rgb_r <= yjk_rgb_c;
    end if; end process;
 
 

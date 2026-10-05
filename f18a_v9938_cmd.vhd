@@ -281,7 +281,7 @@ architecture rtl of f18a_v9938_cmd is
       return n;
    end function;
 
-   type state_t is (S_IDLE, S_SETUP, S_UNIT, S_SRC, S_DST, S_DST_RMW, S_STEP,
+   type state_t is (S_IDLE, S_SETUP, S_SETUP2, S_SETUP3, S_UNIT, S_SRC, S_DST, S_DST_RMW, S_STEP,
                     S_XWAIT, S_RD, S_RD_DATA, S_WR);
    signal state, ret_st : state_t := S_IDLE;
 
@@ -305,6 +305,12 @@ architecture rtl of f18a_v9938_cmd is
    signal src_x         : u16 := (others => '0');      -- x of the source byte read
    signal wbyte         : u8 := (others => '0');       -- byte for the H commands
    signal pcolor        : u8 := (others => '0');       -- color for the L commands
+   -- Setup pipeline: the clipping inputs.
+   signal cs_sh_r       : natural range 0 to 2 := 0;
+   signal cs_sx_r, cs_dx_r : unsigned(8 downto 0) := (others => '0');
+   signal cs_nx_r       : unsigned(9 downto 0) := (others => '0');
+   signal cs_y_r        : u16 := (others => '0');
+   signal cs_two_r, cs_twoy_r : boolean := false;
 
    -- Timing.
    signal since_r       : u8 := (others => '1');       -- cycles since the last access
@@ -357,11 +363,6 @@ begin
       variable dyn     : u16;
       variable two     : boolean;
       variable done    : boolean;
-      variable c_sh    : natural range 0 to 2;
-      variable c_sx, c_dx : unsigned(8 downto 0);
-      variable c_nx    : unsigned(9 downto 0);
-      variable c_y     : u16;
-      variable c_two   : boolean;
       variable dl_main, dl_eol : natural range 0 to 255;
 
       procedure finish is
@@ -438,25 +439,33 @@ begin
             null;
 
          -- The command was written to R#46: set up the counters.
+         -- The setup takes three clocks (timing): the clipping inputs,
+         -- the clipping, the counters.
          when S_SETUP =>
-            state <= S_UNIT;
+            state <= S_SETUP2;
             if cmd_s >= C_LINE and cmd_s /= C_SRCH then
                ny_r <= ny_r and to_unsigned(1023, 16);
             end if;
             -- Clipping inputs: LMCM clips the source, YMMM goes to the edge.
-            c_sh := 0;
-            c_sx := sx_r;
-            c_dx := dx_r;
-            c_nx := nx_r;
-            c_two := cmd_s = C_LMMM or cmd_s = C_HMMM or cmd_s = C_YMMM;
-            c_y := dy_r;
-            if byte_cmd_s then c_sh := sh_s; end if;
-            if cmd_s = C_LMCM then c_dx := sx_r; c_y := sy_r; end if;
-            if cmd_s = C_YMMM then c_nx := to_unsigned(512, 10); c_two := false; end if;
-            tmp_nx <= clip_nx(to_unsigned(ppl_s, 10), c_sh, c_sx, c_dx, c_nx, c_two, dix_s);
-            anx_r  <= resize(clip_nx(to_unsigned(ppl_s, 10), c_sh, c_sx, c_dx, c_nx, c_two, dix_s), 16);
-            tmp_ny <= clip_ny(sy_r, c_y, ny_r(9 downto 0),
-                              cmd_s = C_LMMM or cmd_s = C_HMMM or cmd_s = C_YMMM, diy_s);
+            cs_sh_r <= 0;
+            cs_sx_r <= sx_r;
+            cs_dx_r <= dx_r;
+            cs_nx_r <= nx_r;
+            cs_two_r <= cmd_s = C_LMMM or cmd_s = C_HMMM or cmd_s = C_YMMM;
+            cs_twoy_r <= cmd_s = C_LMMM or cmd_s = C_HMMM or cmd_s = C_YMMM;
+            cs_y_r <= dy_r;
+            if byte_cmd_s then cs_sh_r <= sh_s; end if;
+            if cmd_s = C_LMCM then cs_dx_r <= sx_r; cs_y_r <= sy_r; end if;
+            if cmd_s = C_YMMM then cs_nx_r <= to_unsigned(512, 10); cs_two_r <= false; end if;
+
+         when S_SETUP2 =>
+            state <= S_SETUP3;
+            tmp_nx <= clip_nx(to_unsigned(ppl_s, 10), cs_sh_r, cs_sx_r, cs_dx_r, cs_nx_r, cs_two_r, dix_s);
+            tmp_ny <= clip_ny(sy_r, cs_y_r, ny_r(9 downto 0), cs_twoy_r, diy_s);
+
+         when S_SETUP3 =>
+            state <= S_UNIT;
+            anx_r  <= resize(tmp_nx, 16);
             asx_r  <= resize(sx_r, 16);
             adx_r  <= resize(dx_r, 16);
             if cmd_s = C_LINE then
