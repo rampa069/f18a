@@ -22,7 +22,8 @@ ocm/f18a_vdp_pll.v  ocm/f18a_vdp_ocm.vhd
 
 Set `intended_device_family` in `f18a_vdp_pll.v` to the core's FPGA family.
 `f18a_vdp.qpf` is a stand-alone synthesis check of the wrapper (all ports as
-virtual pins).
+virtual pins) on an EP4CGX150 (Poseidon), where the 128 KB VRAM of the V9938
+mode fits in internal RAM.
 
 ## Interface
 

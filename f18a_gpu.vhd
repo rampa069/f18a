@@ -127,8 +127,8 @@ architecture rtl of f18a_gpu is
    -- **NOTE**
    -- These are also defined in the CPU module to avoid using actual paths
    -- and resources to transfer a constant to the GPU module.
-   constant VMAJOR   : std_logic_vector(0 to 3) := X"1";
-   constant VMINOR   : std_logic_vector(0 to 3) := X"9";
+   constant VMAJOR   : std_logic_vector(0 to 3) := X"3";
+   constant VMINOR   : std_logic_vector(0 to 3) := X"0";
 
    -- 2K private dedicated RAM for the GPU
    type gpuram_type is array (0 to 2047) of std_logic_vector(0 to 7);

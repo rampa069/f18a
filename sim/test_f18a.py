@@ -20,6 +20,7 @@ MODULES = [
     ("test_v9938_io", runner.TOPLEVEL),
     ("test_v9938_display", runner.TOPLEVEL),
     ("test_v9938_cmd", runner.TOPLEVEL),
+    ("test_testcard", runner.TOPLEVEL),
     ("test_ocm", runner.OCM_TOPLEVEL),
 ]
 

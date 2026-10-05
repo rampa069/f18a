@@ -183,8 +183,8 @@ architecture rtl of f18a_cpu is
    -- **NOTE**
    -- These are also defined in the GPU module to avoid using actual paths
    -- and resources to transfer a constant to the GPU module.
-   constant VMAJOR   : std_logic_vector(0 to 3) := X"1";
-   constant VMINOR   : std_logic_vector(0 to 3) := X"9";
+   constant VMAJOR   : std_logic_vector(0 to 3) := X"3";
+   constant VMINOR   : std_logic_vector(0 to 3) := X"0";
    constant IDENT    : std_logic_vector(0 to 2) := "111"; -- >Ex
    -- Collision coordinates: openMSX X = x + 12, Y = display line + 7.  The
    -- values here include the pipeline offsets of sp_x and scanline.

@@ -8,6 +8,31 @@
 
 ## Version History
 
+### F18A 3.0 (this fork), 2026
+
+  Fork of the F18A V1.9 by Matthew Hagerty for FPGA retro computer cores
+  (MiST family boards, OCM-PLD / ZEMMIX MSX cores).  Not the original F18A
+  firmware: version 3.0 so the two are not confused.
+
+  * Ported to Altera Cyclone IV (Quartus), simulated with NVC + cocotb
+    against reference models (`sim/`).
+  * Native 15 kHz video (the timing of the real chip): NTSC 262 lines and
+    PAL 313 lines, separate and composite sync, blank output.  The boards
+    double it to 31 kHz with their scandoubler.  The VGA mode was removed.
+  * V9938 (MSX2) mode (`v9938_i`): 128 KB VRAM, R#0-R#46, ports 9Ah / 9Bh,
+    every screen mode (T1, T2 with blink, G1-G7, MC), 192 / 212 lines,
+    R#18 / R#23, line interrupt, interlace and even / odd pages, sprite mode
+    2 with collision coordinates, the 512 color palette, the command engine
+    (V9938 speed or fast), R#8 VR = 0 addressing.  Checked against openMSX
+    (`docs/v9938-diseno.md`).
+  * `ocm/`: drop-in replacement for the OCM-PLD / ZEMMIX `vdp` entity.
+  * Text mode at 6 pixels (9918A) / 9 pixels (V9938) into the active area,
+    like the real chips.
+  * Power-on screen: a test card with the version (`tools/testcard.py`).
+    `docs/testcard/` has the card as the VDP shows it in every mode
+    (`sim/tests/test_testcard.py`).
+
+
 ### F18A V1.9 Dec 31, 2018 (CRC: 99/4A-disk: A374, 99/4A-rom: 147A, CV-rom:  )
 
   Oct 14, 2018 WIP

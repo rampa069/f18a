@@ -13,9 +13,9 @@ make -C sim setup         # creates ../.venv with cocotb, pytest, numpy, pillow
 ## Running
 
 ```bash
-make -C sim test                        # everything (~17 min)
-make -C sim test T=host_io              # one module: host_io, timing, render, v9938_io, v9938_display, v9938_cmd, ocm
-make -C sim test-quick                  # one test of each area (~1 min)
+make -C sim test                        # everything (~50 min)
+make -C sim test T=host_io              # one module: host_io, timing, render, v9938_io, v9938_display, v9938_cmd, testcard, ocm
+make -C sim test-quick                  # one test of each area (~4 min)
 F18A_UPDATE_GOLDEN=1 make -C sim test   # regenerate sim/golden/*.png
 ```
 
@@ -36,6 +36,7 @@ Logs, results and captured frames go to `sim/sim_build/`
 | `tests/test_v9938_display.py` | V9938 mode display against the model: G1/G2/MC/G3/G4/G5 with 192/212 lines, R#23, pages, TP, sprite mode 2; sprite status; line interrupt (R#19, IE1, FH); set adjust (R#18) |
 | `tests/test_v9938_io.py` | V9938 mode CPU interface (ports 98h-9Bh, R#14, planar addresses, palette, indirect registers, status) against `v9938_model.py` |
 | `tests/test_v9938_cmd.py` | V9938 command engine: the `io_sequences.SEQUENCES_CMD` sequences (every command and logical operation in G4-G7, clipping, transfers, status) against `v9938_model.py`, comparing the reads, the whole VRAM and R#32-R#46 |
+| `tests/test_testcard.py` | The power-on test card (`tools/testcard.py`) in every mode against the models; saves `docs/testcard/<chip>_<mode>.png` and `boot.png` |
 | `tb/ocm_tb.vhd`, `tb/f18a_vdp_pll_sim.vhd` | OCM-PLD VDP wrapper testbench (CLK21M, frames sampled on CLK21M) and PLL model |
 | `tests/test_ocm.py` | OCM-PLD wrapper: dot clocks, bus, MSX2 register writes, PAL/NTSC selection, 15/31 kHz line timing and image |
 
