@@ -31,6 +31,7 @@ entity f18a_tb is
       pal_i          : in  std_logic;
       v9938_i        : in  std_logic;
       cmd_fast_i     : in  std_logic := '1';
+      v9958_i        : in  std_logic := '0';
 
       -- Video, observed by cocotb.
       clk_core_o     : out std_logic;
@@ -98,6 +99,7 @@ begin
       v9938_i        => v9938_i,
       mode1_i        => mode1_i,
       cmd_fast_i     => cmd_fast_i,
+      v9958_i        => v9958_i,
       int_n_o        => int_n_o,
       cd_i           => cd_i,
       cd_o           => cd_o,

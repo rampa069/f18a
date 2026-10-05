@@ -349,5 +349,13 @@ for _m in CMD_MODES:
 SEQUENCES_CMD["misc"] = seq_cmd_misc
 SEQUENCES_CMD["nonbitmap"] = seq_cmd_nonbitmap
 
+
+def seq_v9958_status():
+    """V9958: S#1 has ID 2."""
+    return status(1, 1, 2, 0)
+
+
+SEQUENCES_CMD["v9958_status"] = seq_v9958_status
+
 # Sequences that need a V9958 (MSX2+ machine).
-V9958_SEQUENCES = {"nonbitmap"}
+V9958_SEQUENCES = {"nonbitmap", "v9958_status"}

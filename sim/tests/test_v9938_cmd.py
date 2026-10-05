@@ -45,7 +45,8 @@ def vram_snapshot(ram):
 
 async def run(dut, seq, fast=True):
     f = F18A(dut)
-    await f.reset(v9938=True)
+    v9958 = seq in io_sequences.V9958_SEQUENCES
+    await f.reset(v9938=True, v9958=v9958)
     dut.cmd_fast_i.value = 1 if fast else 0
     for r, v in enumerate(REGS):
         await f.set_reg(r, v)
@@ -54,6 +55,7 @@ async def run(dut, seq, fast=True):
     core = dut.inst_core
     ram = core.inst_vram.inst_ram.ram
     model = vm.V9938(regs=REGS + [0] * (47 - len(REGS)))
+    model.v9958 = v9958
     model.vram[:] = bytes(vram_snapshot(ram))
     model.read_status()
 
@@ -160,8 +162,7 @@ async def cmd_G4_move_timed(dut):
 
 
 for _seq in io_sequences.SEQUENCES_CMD:
-    if _seq not in io_sequences.V9958_SEQUENCES:
-        globals()[f"cmd_{_seq}"] = _make(_seq)
+    globals()[f"cmd_{_seq}"] = _make(_seq)
 
 
 # -- V9938 command timing (cmd_fast_i = 0) ------------------------------------

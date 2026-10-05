@@ -196,6 +196,8 @@ class V9938:
             value = self.cmd.read_s9()
         else:
             value = self.status[n] if n < len(self.status) else 0xFF
+            if n == 1 and self.v9958:
+                value |= 0x04                 # ID 2 = V9958
         if n == 0:
             self.status[0] &= 0x1F
         if n == 5:

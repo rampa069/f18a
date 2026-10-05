@@ -68,6 +68,8 @@ entity f18a_v9938_cmd is
       rst_n       : in  std_logic;
       mode_ok     : in  std_logic;                    -- '1' in G4-G7 (commands possible)
       bmode       : in  std_logic_vector(0 to 1);     -- "00" G4, "01" G5, "10" G6, "11" G7
+      nb          : in  std_logic := '0';             -- V9958 R#25 CMD in a non-bitmap mode: G7
+                                                      -- coordinates on a linear 256 byte per line VRAM
    -- Timing
       fast        : in  std_logic := '1';             -- '1': no V9938 timing
       cyc         : in  unsigned(10 downto 0) := (others => '0');  -- V9938 cycle in the line, 0-1367
@@ -150,9 +152,13 @@ architecture rtl of f18a_v9938_cmd is
    constant C_YMMM  : unsigned(3 downto 0) := x"E";
    constant C_HMMC  : unsigned(3 downto 0) := x"F";
 
-   -- Pixel address in the current mode (physical, G6 / G7 planar).
-   function addr_of(m : std_logic_vector(0 to 1); x, y : u16) return unsigned is
+   -- Pixel address in the current mode (physical, G6 / G7 planar; the V9958
+   -- non-bitmap mode linear).
+   function addr_of(m : std_logic_vector(0 to 1); nb : std_logic; x, y : u16) return unsigned is
    begin
+      if nb = '1' then
+         return y(8 downto 0) & x(7 downto 0);
+      end if;
       case m is
       when "00"   => return y(9 downto 0) & x(7 downto 1);              -- G4
       when "01"   => return y(9 downto 0) & x(8 downto 2);              -- G5
@@ -309,6 +315,7 @@ architecture rtl of f18a_v9938_cmd is
 
    -- Decoded.
    signal cmd_s         : unsigned(3 downto 0);
+   signal emode_s       : std_logic_vector(0 to 1);   -- pixel format: the non-bitmap mode is like G7
    signal op_s          : unsigned(3 downto 0);
    signal ppl_s         : natural range 256 to 512;
    signal sh_s          : natural range 0 to 2;
@@ -323,11 +330,12 @@ architecture rtl of f18a_v9938_cmd is
 begin
 
    cmd_s   <= cmd_r(7 downto 4);
+   emode_s <= "11" when nb = '1' else bmode;
    op_s    <= cmd_r(3 downto 0);
-   ppl_s   <= 512 when bmode = "01" or bmode = "10" else 256;
-   ppl_bit_s <= 9 when bmode = "01" or bmode = "10" else 8;
-   sh_s    <= 1 when bmode = "00" or bmode = "10" else 2 when bmode = "01" else 0;
-   cmask_s <= x"0F" when bmode = "00" or bmode = "10" else x"03" when bmode = "01" else x"FF";
+   ppl_s   <= 512 when emode_s = "01" or emode_s = "10" else 256;
+   ppl_bit_s <= 9 when emode_s = "01" or emode_s = "10" else 8;
+   sh_s    <= 1 when emode_s = "00" or emode_s = "10" else 2 when emode_s = "01" else 0;
+   cmask_s <= x"0F" when emode_s = "00" or emode_s = "10" else x"03" when emode_s = "01" else x"FF";
    byte_cmd_s <= cmd_s(3 downto 2) = "11";             -- HMMV HMMM YMMM HMMC
    xfer_cmd_s <= cmd_s = C_LMCM or cmd_s = C_LMMC or cmd_s = C_HMMC;
    mxs_s   <= arg_r(4);
@@ -368,7 +376,7 @@ begin
          req_r  <= '1';
          we_r   <= '0';
          need_r <= dl;
-         addr_r <= addr_of(bmode, x, y);
+         addr_r <= addr_of(emode_s, nb, x, y);
          ret_st <= ret;
          state  <= S_RD;
       end procedure;
@@ -503,7 +511,7 @@ begin
             if mxs_s = '1' and cmd_s /= C_YMMM then
                sp := x"FF"; sb := x"FF";
             else
-               sp := pix_of(bmode, rdata, src_x); sb := rdata;
+               sp := pix_of(emode_s, rdata, src_x); sb := rdata;
             end if;
             pcolor <= sp;
             wbyte  <= sb;
@@ -546,9 +554,9 @@ begin
             elsif byte_cmd_s then
                -- HMMM / YMMM: 24 cycles after the source read.
                if cmd_s = C_HMMM or cmd_s = C_YMMM then
-                  write_at(addr_of(bmode, a, dy_r), wbyte, S_STEP, to_unsigned(24, 8));
+                  write_at(addr_of(emode_s, nb, a, dy_r), wbyte, S_STEP, to_unsigned(24, 8));
                else
-                  write_at(addr_of(bmode, a, dy_r), wbyte, S_STEP, unit_delta_r);
+                  write_at(addr_of(emode_s, nb, a, dy_r), wbyte, S_STEP, unit_delta_r);
                end if;
             else
                -- LMMM: 32 cycles after the source read.
@@ -560,7 +568,7 @@ begin
             end if;
 
          when S_DST_RMW =>
-            v9 := logop(op_s, rdata, shift_col(bmode, pcolor, src_x), pix_mask(bmode, src_x));
+            v9 := logop(op_s, rdata, shift_col(emode_s, pcolor, src_x), pix_mask(emode_s, src_x));
             if v9(8) = '1' then
                write_at(addr_r, v9(7 downto 0), S_STEP, to_unsigned(24, 8));
             else

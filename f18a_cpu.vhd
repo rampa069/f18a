@@ -62,6 +62,7 @@ entity f18a_cpu is
       csr_n       : in  std_logic;
       vr8_ignore  : in  std_logic;     -- '1' = ignore VR8+ writes when locked, instead of masking to VR0-7
       v9938       : in  std_logic;     -- '1' = V9938 mode (static): R0-R46, ports 9Ah/9Bh, 128 KB
+      v9958       : in  std_logic := '0';  -- '1' = V9958 (static, with v9938 = '1'): ID 2, R#25-R#27
       mode1       : in  std_logic;     -- port address bit 1 (V9938 ports 2 and 3)
       cd_i        : in  std_logic_vector(0 to 7);
       cd_o        : out std_logic_vector(0 to 7);
@@ -316,6 +317,7 @@ architecture rtl of f18a_cpu is
    signal cmd_ack       : std_logic;
    signal cmd_rvalid    : std_logic;
    signal v38_bmp_s     : std_logic;
+   signal cmd_nb_s      : std_logic;                   -- V9958: commands in a non-bitmap mode
    signal v38_bmode_s   : std_logic_vector(0 to 1);
 
    -- Status register output, depends on status register pointer R15
@@ -482,7 +484,7 @@ begin
 
 
    -- The status register number determines which status is returned.
-   process (v9938, v38_reg, vr, hr, cmd_tr, cmd_bd, cmd_ce, cmd_col, cmd_asx, eo, coll_x_r, coll_y_r,
+   process (v9938, v9958, v38_reg, vr, hr, cmd_tr, cmd_bd, cmd_ce, cmd_col, cmd_asx, eo, coll_x_r, coll_y_r,
    reg15sreg_num, intr_ff, sp_5s_ff, sp_c_ff, sp_5th_reg, horz_ff,
    gpu_status, gpu_running, scanline, reg_val, blank,
    cnt_nano_sr, cnt_micro_sr, cnt_milli_sr, cnt_sec_sr)
@@ -497,8 +499,8 @@ begin
          when X"0" =>
             status_reg <= intr_ff & sp_5s_ff & sp_c_ff & sp_5th_reg;
             clear_sr0 <= '1';
-         when X"1" =>   -- FL, LPS, ID 0 (V9938), FH
-            status_reg <= "0000000" & horz_ff;
+         when X"1" =>   -- FL, LPS, ID (0 = V9938, 2 = V9958), FH
+            status_reg <= "00000" & v9958 & '0' & horz_ff;
             clear_sr1 <= '1';
          when X"2" =>   -- TR, VR, HR, BD, 1, 1, EO, CE
             status_reg <= cmd_tr & vr & hr & cmd_bd & "11" & eo & cmd_ce;
@@ -1439,6 +1441,8 @@ begin
                    "10" when v38_m(1) = '0' else         -- G6
                    "11";                                 -- G7
    v38_bmp      <= v38_bmp_s;
+   -- V9958 R#25 CMD: commands in the non-bitmap modes too.
+   cmd_nb_s     <= v9958 and v38_reg(25)(1) and not v38_bmp_s;
    v38_bmode    <= v38_bmode_s;
    v38_r2       <= v38_reg(2);
    v38_r7       <= v38_reg(7);
@@ -1522,8 +1526,9 @@ begin
    port map (
       clk         => clk,
       rst_n       => rst_n,
-      mode_ok     => v38_bmp_s,
+      mode_ok     => v38_bmp_s or cmd_nb_s,
       bmode       => v38_bmode_s,
+      nb          => cmd_nb_s,
       fast        => cmd_fast,
       cyc         => cyc,
       cyc_tick    => cyc_tick,

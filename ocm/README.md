@@ -30,6 +30,7 @@ mode fits in internal RAM.
 | Ports | Behavior |
 |---|---|
 | `CLK21M`, `RESET` | 21.477 MHz system clock; a PLL makes the F18A clocks (85.91 MHz core = x4, 10.74 MHz pixel = /2) |
+| `V9958` (generic) | '1': V9958 (MSX2+, S#1 ID 2, commands in the non-bitmap modes with R#25 CMD); default '0' until horizontal scroll and YJK are done |
 | `V9938` (generic) | '1' (default): V9938 mode, 128 KB VRAM in internal RAM (128 M9K: Poseidon / EP4CGX150 class FPGAs). '0': TMS9918A + F18A, 16 KB |
 | `REQ`, `ACK`, `WRT`, `ADR`, `DBO`, `DBI` | I/O 98h (data) and 99h (control / status); in V9938 mode also 9Ah (palette) and 9Bh (indirect register), otherwise 9Ah / 9Bh writes are ignored. 9Ah / 9Bh reads return FFh. `ACK` follows `REQ` one cycle later like the original. `DBI` is valid 5 cycles (230 ns) after `REQ`; OCM samples it much later (420 ns at 3.58 MHz, 6 wait states in turbo modes) |
 | `INT_N` | Frame interrupt, synchronized to `CLK21M` |

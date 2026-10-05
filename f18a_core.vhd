@@ -79,6 +79,7 @@ entity f18a_core is
       csr_n_i              : in  std_logic;
       vr8_ignore_i         : in  std_logic;  -- '1' = ignore VR8+ writes when locked (V9938 hosts), '0' = mask like a 9918A
       v9938_i              : in  std_logic;  -- '1' = V9938 mode (static, needs VRAM_ABITS = 17)
+      v9958_i              : in  std_logic := '0';  -- '1' = V9958 (static, with v9938_i = '1')
       mode1_i              : in  std_logic;  -- port address bit 1 (V9938 ports 9Ah / 9Bh), '0' for a 9918A
       int_n_o              : out std_logic;
       cd_i                 : in  std_logic_vector(0 to 7);
@@ -354,6 +355,7 @@ begin
       csr_n          => csr_n_i,
       vr8_ignore     => vr8_ignore_i,
       v9938          => v9938_i,
+      v9958          => v9958_i,
       mode1          => mode1_i,
       cd_i           => cd_i,
       cd_o           => cd_o,

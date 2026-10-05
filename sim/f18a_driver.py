@@ -48,7 +48,7 @@ class F18A:
     def __init__(self, dut):
         self.dut = dut
 
-    async def reset(self, sprite_max_4=True, pal=False, v9938=False):
+    async def reset(self, sprite_max_4=True, pal=False, v9938=False, v9958=False):
         """Reset the core.  sprite_max_4 selects the real 9918A limit of
         four sprites per line (jumper USR1 off on the F18A board); pal the
         PAL geometry; v9938 the V9938 mode."""
@@ -56,7 +56,8 @@ class F18A:
         dut.reset_n_i.value = 0
         dut.mode_i.value = 0
         dut.mode1_i.value = 0
-        dut.v9938_i.value = 1 if v9938 else 0
+        dut.v9938_i.value = 1 if v9938 or v9958 else 0
+        dut.v9958_i.value = 1 if v9958 else 0
         dut.cmd_fast_i.value = 1                    # command engine without V9938 timing
         dut.csw_n_i.value = 1
         dut.csr_n_i.value = 1
