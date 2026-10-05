@@ -81,6 +81,9 @@ entity f18a_cpu is
       v38_lines212: out std_logic;                    -- V9938 R9 LN
       v38_r9      : out std_logic_vector(0 to 7);     -- V9938 R9 (NT, IL, EO)
       v38_vr      : out std_logic;                    -- V9938 R8 VR ('0' = 16K chips address mapping)
+      v58_r25     : out std_logic_vector(0 to 7);     -- V9958 R#25-R#27, 0 unless V9958
+      v58_r26     : out std_logic_vector(0 to 7);
+      v58_r27     : out std_logic_vector(0 to 7);
       v38_vscroll : out unsigned(0 to 7);             -- V9938 R23 vertical scroll
       v38_hadj    : out signed(0 to 3);               -- V9938 R18 set adjust, horizontal
       v38_vadj    : out signed(0 to 3);               --                       vertical
@@ -93,6 +96,8 @@ entity f18a_cpu is
       v38_bmp     : out std_logic;                    -- V9938 bitmap mode G4-G7
       v38_bmode   : out std_logic_vector(0 to 1);     -- "00" G4, "01" G5, "10" G6, "11" G7
       v38_r2      : out std_logic_vector(0 to 7);
+      v38_r4      : out std_logic_vector(0 to 7);
+      v38_r10     : out std_logic_vector(0 to 7);
       v38_r7      : out std_logic_vector(0 to 7);
       v38_blink   : out std_logic;                    -- V9938 T2: blink state on (R#12 colors)
       v38_blink_raw : out std_logic;                  -- V9938 R#13 blink state (bitmap page flip)
@@ -318,6 +323,7 @@ architecture rtl of f18a_cpu is
    signal cmd_rvalid    : std_logic;
    signal v38_bmp_s     : std_logic;
    signal cmd_nb_s      : std_logic;                   -- V9958: commands in a non-bitmap mode
+   signal cmd_ok_s      : std_logic;                   -- commands possible in this mode
    signal v38_bmode_s   : std_logic_vector(0 to 1);
 
    -- Status register output, depends on status register pointer R15
@@ -1430,6 +1436,9 @@ begin
    v38_lines212 <= v9938 and v38_reg(9)(0);
    v38_r9       <= v38_reg(9) when v9938 = '1' else (others => '0');
    v38_vr       <= v38_reg(8)(4) or not v9938;
+   v58_r25      <= v38_reg(25) when v9958 = '1' else (others => '0');
+   v58_r26      <= v38_reg(26) when v9958 = '1' else (others => '0');
+   v58_r27      <= v38_reg(27) when v9958 = '1' else (others => '0');
    v38_vscroll  <= unsigned(v38_reg(23)) when v9938 = '1' else (others => '0');
    v38_hadj     <= signed(v38_reg(18)(4 to 7)) when v9938 = '1' else (others => '0');
    v38_vadj     <= signed(v38_reg(18)(0 to 3)) when v9938 = '1' else (others => '0');
@@ -1443,8 +1452,11 @@ begin
    v38_bmp      <= v38_bmp_s;
    -- V9958 R#25 CMD: commands in the non-bitmap modes too.
    cmd_nb_s     <= v9958 and v38_reg(25)(1) and not v38_bmp_s;
+   cmd_ok_s     <= v38_bmp_s or cmd_nb_s;
    v38_bmode    <= v38_bmode_s;
    v38_r2       <= v38_reg(2);
+   v38_r4       <= v38_reg(4);
+   v38_r10      <= v38_reg(10);
    v38_r7       <= v38_reg(7);
 
    -- Sprite mode 2 in G3-G7 (M4 or M5, not T2).
@@ -1526,7 +1538,7 @@ begin
    port map (
       clk         => clk,
       rst_n       => rst_n,
-      mode_ok     => v38_bmp_s or cmd_nb_s,
+      mode_ok     => cmd_ok_s,
       bmode       => v38_bmode_s,
       nb          => cmd_nb_s,
       fast        => cmd_fast,

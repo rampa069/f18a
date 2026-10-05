@@ -68,6 +68,8 @@ entity f18a_counters is
       lines212       : in std_logic;            -- V9938 R9 LN: 212 active lines
       vscroll        : in unsigned(0 to 7);     -- V9938 R23 vertical scroll (0 for a 9918A)
       v9938          : in std_logic;            -- V9938 mode: text starts 9 pixels in, not 6
+      hlow           : in unsigned(0 to 2) := "000";  -- V9958 R#27: background moved right, border at the left
+      hmask          : in std_logic := '0';     -- V9958 R#25 MSK: the first 8 pixels are border
       sprt_yreal     : in std_logic;            -- 1 to use real sprite location, 0 for original off-by-one
       gmode          : in unsigned(0 to 3);
       row30          : in std_logic;            -- 1 when 30 rows
@@ -152,6 +154,8 @@ architecture rtl of f18a_counters is
    -- X 1x-pixels
    signal x480 : unsigned(0 to 9);  -- text modes (8x6 tiles)
    signal x512 : unsigned(0 to 9);  -- graphics modes (8x8 tiles)
+   signal x512s : unsigned(0 to 9); -- the same without the V9958 R#27 scroll (sprites)
+   signal lborder_s : unsigned(0 to 6);  -- V9958 left border width (R#27 / MSK), raster pixels
 
    -- X 2x-pixels
    signal x240 : unsigned(0 to 7);
@@ -182,9 +186,11 @@ begin
    -- few buffer tiles are being accessed and the propagation delay
    -- causes a thin line of the last pixel color to appear on the left
    -- edge of the margin-to-active area boundary.
-   x512 <= raster_x - XSTART;
+   -- V9958 R#27: the background (not the sprites) moves hlow pixels right.
+   x512 <= raster_x - XSTART - (hlow & '0');
+   x512s <= raster_x - XSTART;
    xstart2_s <= to_unsigned(XSTART2V, 10) when v9938 = '1' else to_unsigned(XSTART2, 10);
-   x480 <= raster_x - xstart2_s;
+   x480 <= raster_x - xstart2_s - (hlow & '0');
    x256 <= x512(1 to 8);
    x240 <= x480(1 to 8);
    x_pixel_max <=
@@ -199,7 +205,7 @@ begin
       '0' & x240 when gmode = 1 else      -- text1 mode
       '0' & x256;                         -- gm1, gm2, mcm
 
-   x_sprt_pos_next <= x256;               -- sprites are always on a 0 to 255 grid
+   x_sprt_pos_next <= x512s(1 to 8);      -- sprites are always on a 0 to 255 grid, not scrolled
 
    process (vga_clk) begin if rising_edge(vga_clk) then
       if xmargin = '1' then
@@ -323,8 +329,10 @@ begin
       end if;
    end process;
 
+   -- V9958: R#27 (or with MSK 8) pixels at the left are border, sprites too.
+   lborder_s <= ("000" & hlow & '0') when hmask = '0' else to_unsigned(16, 7);
    margin_next <= '1' when
-       raster_x < xstart_mux or raster_x > xend_mux or
+       raster_x < xstart_mux + lborder_s or raster_x > xend_mux or
        raster_y < ystart_mux or raster_y > yend_mux else '0';
    xmargin <= '1' when raster_x < xstart_mux or raster_x > xend_mux else '0';
    ymargin <= '1' when raster_y < ystart_mux or raster_y > yend_mux else '0';

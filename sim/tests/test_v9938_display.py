@@ -46,9 +46,9 @@ def mask_banner(frame):
     return frame
 
 
-async def load(f, vram, regs, pal, vram_size=0x10000):
+async def load(f, vram, regs, pal, vram_size=0x10000, v9958=False):
     """Load a scene in V9938 mode: palette (9Ah), VRAM, registers."""
-    await f.reset(v9938=True)
+    await f.reset(v9938=True, v9958=v9958)
     await f.set_reg(1, 0x00)                   # blank while loading
     await f.set_reg(8, regs[8])                # VR before the VRAM (VR = 0 maps it differently)
     await f.set_reg(16, 0)
@@ -66,14 +66,18 @@ async def load(f, vram, regs, pal, vram_size=0x10000):
     await f.read_status()
 
 
-async def render_scene(dut, name):
-    vram, regs, pal = v9938_scenes.DISPLAY_SCENES[name]()
+async def render_scene(dut, name, v9958=False):
+    scenes = v9938_scenes.V9958_SCENES if v9958 else v9938_scenes.DISPLAY_SCENES
+    vram, regs, pal = scenes[name]()
     f = F18A(dut)
-    # G6 / G7 use the whole 128 KB (two interleaved 64 KB banks).
-    await load(f, vram, regs, pal, vram_size=len(vram) if regs[0] & 0x08 and regs[0] & 0x02 else 0x10000)
+    # The whole 128 KB: G6 / G7 use two interleaved 64 KB banks, and the
+    # V9958 scenes use pages above 64 KB.
+    big = (regs[0] & 0x08 and regs[0] & 0x02) or v9958 or any(vram[0x10000:])
+    await load(f, vram, regs, pal, vram_size=len(vram) if big else 0x10000, v9958=v9958)
     await FallingEdge(dut.vsync_n_o)
     got = mask_banner(await f.capture_frame())
     model = vm.V9938(vram, regs, pal)
+    model.v9958 = v9958
     exp = mask_banner(model_frame(model))
     save_png(got, CAPTURE_DIR / f"v9938_{name}.png")
     save_png(exp, CAPTURE_DIR / f"v9938_{name}_model.png")
@@ -95,6 +99,17 @@ def make_render(name):
 
 for _name in v9938_scenes.DISPLAY_SCENES:
     globals()[f"render_{_name}"] = make_render(_name)
+
+
+def make_render58(name):
+    async def test(dut):
+        await render_scene(dut, name, v9958=True)
+    test.__name__ = test.__qualname__ = f"render58_{name}"
+    return cocotb.test()(test)
+
+
+for _name in v9938_scenes.V9958_SCENES:
+    globals()[f"render58_{_name}"] = make_render58(_name)
 
 
 async def first_picture_line(dut):

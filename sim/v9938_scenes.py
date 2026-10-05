@@ -106,6 +106,21 @@ def bitmap_page_flip(sc, r9_or=0, r13=0):
     return vram, regs, pal
 
 
+def high_tables(sc):
+    """The same scene with every table 64 KB higher (A16 in R#2, R#4,
+    R#10, R#5 / R#11 and R#6)."""
+    vram, regs, pal = sc
+    vram[0x10000:0x18000] = vram[0x0000:0x8000]
+    vram[0x0000:0x8000] = bytes(0x8000)
+    regs = list(regs)
+    regs[2] |= 0x40
+    regs[4] |= 0x20
+    regs[10] = (regs[10] if len(regs) > 10 else 0) | 0x04
+    regs[11] = (regs[11] if len(regs) > 11 else 0) | 0x02
+    regs[6] |= 0x20
+    return vram, regs, pal
+
+
 def default_palette(sc):
     """Leave the palette as it is after a reset (the V9938 one)."""
     vram, regs, _ = sc
@@ -129,6 +144,7 @@ DISPLAY_SCENES = {
     "g3": lambda: scene("G3", 6),
     "g3_212_scroll": lambda: scene("G3", 7, lines212=True, scroll=37),
     "g3_mag": lambda: scene("G3", 25, mag=True),
+    "g3_high": lambda: high_tables(scene("G3", 50)),
     "g4_212": lambda: scene("G4", 8, lines212=True),
     "g4_scroll": lambda: scene("G4", 26, scroll=77),
     "g4_mag_tp": lambda: scene("G4", 9, tp=True, mag=True),
@@ -156,6 +172,7 @@ SCENES = {
     "t2_blink_off": lambda: t2_blink(scene("T2", 33), 0x4E, 0x0F),
     "g3": lambda: scene("G3", 6),
     "g3_212_scroll": lambda: scene("G3", 7, lines212=True, scroll=37),
+    "g3_high": lambda: high_tables(scene("G3", 50)),
     "g4_212": lambda: scene("G4", 8, lines212=True),
     "g4_mag_tp": lambda: scene("G4", 9, tp=True, mag=True),
     "g4_page1": lambda: page1(scene("G4", 27, lines212=True)),

@@ -146,6 +146,13 @@ architecture rtl of f18a_core is
    signal v38_lines212_s   : std_logic;                  -- V9938 display controls
    signal v38_r9_s         : std_logic_vector(0 to 7);
    signal v38_r8vr_s       : std_logic;                  -- R#8 VR
+   signal v58_r25_s, v58_r26_s, v58_r27_s : std_logic_vector(0 to 7);   -- V9958, 0 otherwise
+   signal t1horz_eff_s     : std_logic_vector(0 to 7);   -- tile scroll: F18A, or V9958 R#26
+   signal v58_hs_s         : unsigned(0 to 4);
+   signal v58_hlow_s       : unsigned(0 to 2);
+   signal v58_multi_s      : std_logic;
+   signal v38_nt_hi_s, v38_pg_hi_s, v38_ct_hi_s : std_logic_vector(0 to 2);
+   signal v38_r4_s, v38_r10_s : std_logic_vector(0 to 7);
    signal cpu_vaddr_m_s, tile_vaddr_m_s, sprt_vaddr_m_s : std_logic_vector(0 to 16);
    signal field_s          : std_logic;                  -- S#2 EO
    -- V9938 cycle (21.477 MHz, 4 core clocks) in the line, for the command
@@ -374,6 +381,11 @@ begin
       v38_lines212   => v38_lines212_s,
       v38_r9         => v38_r9_s,
       v38_vr         => v38_r8vr_s,
+      v38_r4         => v38_r4_s,
+      v38_r10        => v38_r10_s,
+      v58_r25        => v58_r25_s,
+      v58_r26        => v58_r26_s,
+      v58_r27        => v58_r27_s,
       v38_vscroll    => v38_vscroll_s,
       v38_hadj       => v38_hadj_s,
       v38_vadj       => v38_vadj_s,
@@ -503,6 +515,8 @@ begin
       lines212       => v38_lines212_s,
       vscroll        => v38_vscroll_s,
       v9938          => v9938_i,
+      hlow           => v58_hlow_s,
+      hmask          => v58_r25_s(6),
       sprt_yreal     => sprt_yreal_s,
       gmode          => gmode_s,
       row30          => row30_s,
@@ -540,6 +554,12 @@ begin
       bmp_en         => v38_bmp_s,
       bmp_mode       => v38_bmode_s,
       bmp_r2         => bmp_r2_s,
+      bmp_hs         => v58_hs_s,
+      v38_nt_hi      => v38_nt_hi_s,
+      v38_pg_hi      => v38_pg_hi_s,
+      v38_ct_hi      => v38_ct_hi_s,
+      bmp_multi      => v58_multi_s,
+      bmp_hp1        => v58_r26_s(2),
       bmp_tp         => v38_tp_s,
       textfg         => textfg_s,
       textbg         => textbg_s,
@@ -555,7 +575,7 @@ begin
       t1ctba         => t1ctba_s,         -- tile1 color table base address
       t1hsize        => t1hsize_s,        -- tile1 horz page size (1 page or 2 pages)
       t1vsize        => t1vsize_s,        -- tile1 vert page size (1 page or 2 pages)
-      t1horz         => t1horz_s,         -- tile1 horz scroll
+      t1horz         => t1horz_eff_s,     -- tile1 horz scroll (F18A, or V9958 R#26)
       t1vert         => t1vert_s,         -- tile1 vert scroll
       t2_en          => t2_en_s,          -- tile2 enable
       t2_pri_en      => t2_pri_en_s,      -- tile2 priority enable (0 = TL2 always on top)
@@ -687,6 +707,21 @@ begin
       half_r <= raster_x_s(9);
    end if; end process;
    r9_pal_o <= v38_r9_s(6);
+
+   -- V9958 horizontal scroll: R#26 in 8 pixel steps (the F18A tile scroll in
+   -- the character modes, the bitmap engine in G4-G7, none in the text
+   -- modes), R#27 fine, R#25 SP2 two pages (odd page in R#2).
+   v58_hs_s     <= unsigned(v58_r26_s(3 to 7));
+   v58_hlow_s   <= unsigned(v58_r27_s(5 to 7));
+   v58_multi_s  <= v58_r25_s(7) and v38_r2_s(2);
+
+   -- V9938 character mode tables above 16 KB: address bits 16-14 from R#2
+   -- (name), R#4 (pattern) and R#10 (color, T2 blink).
+   v38_nt_hi_s  <= v38_r2_s(1 to 3) when v9938_i = '1' else "000";
+   v38_pg_hi_s  <= v38_r4_s(2 to 4) when v9938_i = '1' else "000";
+   v38_ct_hi_s  <= v38_r10_s(5 to 7) when v9938_i = '1' else "000";
+   t1horz_eff_s <= v58_r26_s(3 to 7) & "000" when v9958_i = '1' and v38_bmp_s = '0' and
+                   gmode_s /= 1 and gmode_s /= 9 else t1horz_s;
    sp_xact_s <= '1' when raster_x_s >= 64 and raster_x_s < 64 + 512 else '0';
 
    process (clk_core_i) begin if rising_edge(clk_core_i) then

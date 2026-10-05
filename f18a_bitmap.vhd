@@ -64,6 +64,12 @@ entity f18a_bitmap is
       r2          : in  std_logic_vector(0 to 7);     -- name (page) register
       y           : in  unsigned(0 to 7);             -- display line, with the scroll
       tp          : in  std_logic;                    -- R8 TP: color 0 is not transparent
+   -- V9958 horizontal scroll: the line starts hs * 8 pixels in; with multi
+   -- (R#25 SP2 and an odd page) it continues into the other page, starting
+   -- with the page in hp1 (R#26 bit 5: '1' odd).
+      hs          : in  unsigned(0 to 4) := "00000";
+      multi       : in  std_logic := '0';
+      hp1         : in  std_logic := '0';
    -- VRAM
       active      : out std_logic;                    -- '1' while reading VRAM
       vaddr       : out std_logic_vector(0 to 16);
@@ -100,6 +106,8 @@ architecture rtl of f18a_bitmap is
    signal last_pix_s : unsigned(0 to 1);
    signal vline_s    : std_logic_vector(0 to 9);
    signal laddr_s    : std_logic_vector(0 to 16);  -- logical address
+   signal src_s      : unsigned(0 to 8);           -- byte read, with the scroll (bit 0: next page)
+   signal odd_s      : std_logic;                  -- the odd page of a multi page pair
    signal color_s    : std_logic_vector(0 to 3);
 
 begin
@@ -111,13 +119,19 @@ begin
       "00" when mode = "11" else                            -- G7: 1
       "01";                                                 -- G4, G6: 2
 
-   -- Line address.  R2 bits 6-5 select the page, the lower R2 bits mask y.
+   -- V9958 scroll: start 4 (G4, G5) or 8 (G6, G7) bytes per 8 pixels in.
+   src_s <= ('0' & byte_r) + ("00" & hs & "00") when planar_s = '0' else
+            ('0' & byte_r) + ('0' & hs & "000");
+   odd_s <= hp1 xor src_s(0) when planar_s = '1' else hp1 xor src_s(1);
+
+   -- Line address.  R2 bits 6-5 select the page, the lower R2 bits mask y;
+   -- with V9958 multi page scroll the page bit alternates.
    vline_s(0) <= r2(1) and not planar_s;
-   vline_s(1) <= r2(2);
+   vline_s(1) <= r2(2) and (not multi or odd_s);
    vline_s(2 to 9) <= std_logic_vector(y) and (r2(3 to 7) & "111");
    laddr_s <=
-      vline_s & std_logic_vector(byte_r(1 to 7)) when planar_s = '0' else
-      vline_s(1 to 9) & std_logic_vector(byte_r);
+      vline_s & std_logic_vector(src_s(2 to 8)) when planar_s = '0' else
+      vline_s(1 to 9) & std_logic_vector(src_s(1 to 8));
 
    -- Physical address: planar = logical rotated right by one.
    vaddr <= laddr_s when planar_s = '0' else laddr_s(16) & laddr_s(0 to 15);

@@ -69,6 +69,14 @@ entity f18a_tiles is
       bmp_mode       : in  std_logic_vector(0 to 1);  -- "00" G4, "01" G5, "10" G6, "11" G7
       bmp_r2         : in  std_logic_vector(0 to 7);
       bmp_tp         : in  std_logic;
+      bmp_hs         : in  unsigned(0 to 4) := "00000";  -- V9958 R#26 scroll (8 pixel steps)
+   -- V9938 address bits 16-14 of the tables in the character modes: name
+   -- (R#2), pattern (R#4), color / T2 blink (R#10); "000" for a 9918A.
+      v38_nt_hi      : in  std_logic_vector(0 to 2) := "000";
+      v38_pg_hi      : in  std_logic_vector(0 to 2) := "000";
+      v38_ct_hi      : in  std_logic_vector(0 to 2) := "000";
+      bmp_multi      : in  std_logic := '0';             -- V9958 SP2 with an odd page
+      bmp_hp1        : in  std_logic := '0';             -- V9958 R#26 bit 5: first page odd
       textfg         : in  std_logic_vector(0 to 3);
       textbg         : in  std_logic_vector(0 to 3);
    -- F18A specific
@@ -222,6 +230,8 @@ architecture rtl of f18a_tiles is
    signal pal_sel_r, pal_sel_x      : std_logic_vector(0 to 3);   -- Palette select from tile attribute table
    signal attr_r, attr_x            : std_logic_vector(0 to 7);   -- Tile attribute values
    signal blink_pos_s   : unsigned(0 to 13);                 -- V9938 T2: character position
+   signal vhi_s         : std_logic_vector(0 to 2);          -- V9938 address bits 16-14
+   signal page_r, page_x : std_logic := '0';                 -- V9958 SP2: page of the column
    signal blink_bit_r   : unsigned(0 to 2) := "000";         -- its bit in the blink byte
    signal blink_r, blink_x : std_logic := '0';               -- '1': the character blinks
    signal t1ps_r, t2ps_r            : std_logic_vector(0 to 1);   -- Tile layer 1 and 2 palette select from VR24
@@ -464,6 +474,23 @@ begin
       when ST_ADDR_PTRN3   => vaddr14 <= ptrn3ba_s & ptrn_addr_r(5 to 13);
       when ST_ADDR_COLR    => vaddr14 <= colr_addr_s;
       when others          => vaddr14 <= bml_addr_r;
+      end case;
+   end process;
+
+   -- V9938: the upper address bits of the table being read.  With the
+   -- V9958 multi page scroll the name table page (A15, R#2 bit 5) follows
+   -- the column (CharacterConverter::getNamePtr).
+   process (state_x, v38_nt_hi, v38_pg_hi, v38_ct_hi, bmp_multi, page_r)
+   begin
+      case state_x is
+      when ST_ADDR_NAME =>
+         vhi_s <= v38_nt_hi;
+         if bmp_multi = '1' and page_r = '0' then
+            vhi_s(1) <= '0';
+         end if;
+      when ST_ADDR_ATTR | ST_ADDR_COLR => vhi_s <= v38_ct_hi;
+      when ST_ADDR_PTRN1 | ST_ADDR_PTRN2 | ST_ADDR_PTRN3 => vhi_s <= v38_pg_hi;
+      when others => vhi_s <= "000";
       end case;
    end process;
 
@@ -1211,7 +1238,7 @@ begin
    -- Pattern shift registers.
    -- This FSM expands the tile and BML pixels into the line buffer.
    -- !! Expansion must be fewer states than the addressing FSM !!
-   process (shift_r, state_r, done_r, x_linebuf_r, pixcnt_r, hto_r, hpo_r, hto_s, trig_tile_s,
+   process (shift_r, state_r, done_r, x_linebuf_r, pixcnt_r, hto_r, hpo_r, hto_s, trig_tile_s, page_r, bmp_hp1,
    ptrn1_r, ptrn2_r, ptrn3_r, p1_r, p2_r, p3_r, ntba_s, hscroll_s, hsize_s,
    x_expand_max_r, x_pixel_max, textstart_r, textpos_r, text_ntba_s, textattr_r, ctba_s,
    t_ntba_pos_r, t_horz_off_s, t_ctba_pos_r, texttile_r, text_cmax_s, textmode_r, text_hpo_s)
@@ -1225,6 +1252,7 @@ begin
       x_linebuf_x    <= x_linebuf_r;
       pixcnt_x       <= pixcnt_r;
       hto_x          <= hto_r;
+      page_x         <= page_r;
       hpo_x          <= hpo_r;
       p1_x           <= p1_r;
       p2_x           <= p2_r;
@@ -1252,6 +1280,7 @@ begin
 
          -- Start at the scroll pixel offset.
          hto_x <= ntba_s(3) & hscroll_s(0 to 4);
+         page_x <= bmp_hp1;                     -- V9958: first page
          hpo_x <= unsigned(hscroll_s(5 to 7));
          if textmode_r = '1' then
             hpo_x <= unsigned(text_hpo_s);
@@ -1281,6 +1310,11 @@ begin
                textpos_x  <= textpos_r + 1;
                textattr_x <= textattr_r + 1;
                texttile_x <= texttile_r + 1;
+            end if;
+
+            -- V9958 multi page: the other page after column 31.
+            if hto_r(1 to 5) = "11111" then
+               page_x <= not page_r;
             end if;
 
             -- Tile count is based on page size.
@@ -1338,6 +1372,7 @@ begin
          x_linebuf_r    <= x_linebuf_x;
          pixcnt_r       <= pixcnt_x;
          hto_r          <= hto_x;
+         page_r         <= page_x;
          hpo_r          <= hpo_x;
          p1_r           <= p1_x;
          p2_r           <= p2_x;
@@ -1453,6 +1488,9 @@ begin
       r2          => bmp_r2,
       y           => y_next_r(1 to 8),
       tp          => bmp_tp,
+      hs          => bmp_hs,
+      multi       => bmp_multi,
+      hp1         => bmp_hp1,
       active      => bmp_active_s,
       vaddr       => bmp_vaddr_s,
       vdin        => vdin,
@@ -1462,7 +1500,7 @@ begin
       done        => bmp_done_s
    );
 
-   vaddr        <= bmp_vaddr_s when bmp_active_s = '1' else "000" & vaddr14;
+   vaddr        <= bmp_vaddr_s when bmp_active_s = '1' else vhi_s & vaddr14;
    tile_active  <= tile_act_s or bmp_active_s;
    sprite_start <= spr_start_s or bmp_done_s;
 
