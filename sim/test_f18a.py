@@ -25,6 +25,7 @@ MODULES = [
     ("test_v9990_io", runner.V9990_TOPLEVEL),
     ("test_v9990_timing", runner.V9990_TOPLEVEL),
     ("test_v9990_display", runner.V9990_TOPLEVEL),
+    ("test_v9990_cmd", runner.V9990_TOPLEVEL),
 ]
 
 _built = {}

@@ -266,6 +266,12 @@ def z80_program(ops):
                             at the end (R#17 must point to R#44)
       ("tr_in", n)          n times: wait for TR, read S#7 (stored like an
                             IN); R#15 = 0 at the end
+      ("poll", p, mask, v)  IN A,(p); AND mask until the result is v (0 or
+                            mask)
+      ("tr_out_p", p, s, data)  for every byte: wait for bit 7 of port s,
+                            OUT (p)
+      ("tr_in_p", p, s, n)  n times: wait for bit 7 of port s, IN A,(p)
+                            (stored like an IN)
     The model side (see test_model_openmsx.run_model_io) treats the waits
     and delays as no-ops.
     """
@@ -302,6 +308,23 @@ def z80_program(ops):
             code += _set_r15(2)
             code += _poll_s2(0x01, False) if kind == "wait_ce" else _poll_s2(0x80, True)
             code += _set_r15(0)
+        elif kind == "poll":
+            _, port, mask, val = op
+            code += bytes([0xDB, port, 0xE6, mask, 0x20 if val == 0 else 0x28, 0xFA])
+        elif kind == "tr_out_p":
+            _, port, sport, data = op
+            assert 0 < len(data) <= 256
+            loop_over(data, bytes([0xDB, sport, 0xE6, 0x80, 0x28, 0xFA, 0x7E, 0xD3, port]) + bytes(8))
+        elif kind == "tr_in_p":
+            _, port, sport, n = op
+            assert 0 < n <= 256
+            addr = READS_ADDR + n_reads
+            code += bytes([0x21, addr & 0xFF, addr >> 8, 0x06, n & 0xFF])
+            top = len(code)
+            code += bytes([0xDB, sport, 0xE6, 0x80, 0x28, 0xFA])
+            code += bytes([0xDB, port, 0x77, 0x23]) + bytes(4)
+            code += bytes([0x10, (top - (len(code) + 2)) & 0xFF])
+            n_reads += n
         elif kind == "delay":
             code += bytes([0x06, op[1] & 0xFF, 0x10, 0xFE])
         elif kind == "block":
