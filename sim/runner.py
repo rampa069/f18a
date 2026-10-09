@@ -44,28 +44,11 @@ OCM_SOURCES = ["tb/f18a_vdp_pll_sim.vhd"]
 OCM_RTL_SOURCES = ["ocm/f18a_vdp_ocm.vhd"]
 OCM_TB_SOURCES = ["tb/ocm_tb.vhd"]
 
-# The V9990 (v9990/), a separate chip with its own testbench.
-V9990_TOPLEVEL = "v9990_tb"
-V9990_RTL_SOURCES = [
-    "v9990/v9990_pkg.vhd",
-    "v9990/v9990_vram_bram.vhd",
-    "v9990/v9990_cpu.vhd",
-    "v9990/v9990_raster.vhd",
-    "v9990/v9990_bitmap.vhd",
-    "v9990/v9990_pattern.vhd",
-    "v9990/v9990_sprites.vhd",
-    "v9990/v9990_cmd.vhd",
-    "v9990/v9990_core.vhd",
-]
-V9990_TB_SOURCES = ["tb/v9990_tb.vhd"]
-
 
 def build(toplevel=TOPLEVEL):
     runner = get_runner("nvc")
     sources = [RTL_DIR / s for s in RTL_SOURCES]
-    if toplevel == V9990_TOPLEVEL:
-        sources = [RTL_DIR / s for s in V9990_RTL_SOURCES] + [SIM_DIR / s for s in V9990_TB_SOURCES]
-    elif toplevel == OCM_TOPLEVEL:
+    if toplevel == OCM_TOPLEVEL:
         sources += [SIM_DIR / s for s in OCM_SOURCES] + [RTL_DIR / s for s in OCM_RTL_SOURCES]
         sources += [SIM_DIR / s for s in OCM_TB_SOURCES]
     else:
