@@ -34,3 +34,6 @@ altera/v9938_check/incremental_db/
 altera/v9938_check/output_files/
 altera/v9938_check/*.log
 altera/v9938_check/*.qws
+
+# Ficheros temporales (ROMs, pruebas)
+tmp/
